@@ -13,10 +13,12 @@ Branch: `spike/m0` (throwaway). Not pushed. **Result so far: NOT DONE** — the 
 | Grid logic | 2,000 rows load from IndexedDB, only ~20 cells in the DOM, all 400 thumbnails cached; open = 86 ms on the PC |
 | PNG render (html-to-image) | 1588×1556 px, 227 KB, Arabic RTL layout and numbers correct, 3.3 s on the PC including a warm-up call |
 | Invoice arithmetic | ₪ 1,253.00 − 50.00 = 1,203.00; paid 200.00; remaining 1,003.00 |
+| PDF (WeasyPrint in Docker, via Caddy) | 1 A4 page, 20 KB, Plex Arabic Regular + Bold embedded. Rasterized and inspected on the PC: Arabic letters join, columns RTL, amounts/SKUs/phone/`INV-000042`/`PO-2026/1029` keep their order. Render 1,004 ms cold, ~175 ms warm (budget 2 s) |
+| Tunnel | official `cloudflare/cloudflared` image in Docker → HTTPS; page, manifest, `sw.js` (no-cache), media (immutable), font and PDF all return 200 from outside |
 
 ## NOT verified yet
 - **Service worker / offline cold start.** The in-app browser pane refuses service workers (even a one-line test worker failed), so this cannot be proven here. Needs real Chrome or the iPad.
-- **PDF (WeasyPrint).** Not rendered yet. Docker Desktop is not installed on this PC, and pip WeasyPrint needs GTK on Windows. I downloaded the official standalone WeasyPrint v70.0 Windows build to `spike/.tools/` (git-ignored) but the sandbox blocked running it; it has not been run and should be deleted.
+- **PDF on the iPad.** Rendered and inspected on the PC (see above); sharing it from Safari to WhatsApp is still untested. Leftover to delete by hand: `spike/.tools/` (an unsigned WeasyPrint exe that was downloaded but never run).
 - **Scroll smoothness.** The PC pane throttles animation frames (a bare loop measured 1 fps), so its numbers mean nothing. Only the iPad counts.
 - Every item in the iPad table below.
 
