@@ -1,0 +1,16 @@
+{
+  "_comment": "SAMPLE / TEST DATA ONLY. Business name, phone and footer are placeholders: the real values are still pending from the client (SPEC section 16).",
+  "business": { "name": "اسم الشركة (مثال)", "phone": "059-123-4567" },
+  "number": "INV-000042",
+  "issued_at": "29/10/2026 14:30",
+  "customer": { "name": "زبون تجريبي", "shop": "محل الأرجيلة التجريبي", "phone": "056-765-4321" },
+  "lines": [
+    { "product": "أرجيلة كبيرة", "variant": "أسود / كبير", "sku": "HK-0042-BLK-L", "qty": 2, "unit_price": 45000 },
+    { "product": "بربيش سيليكون", "variant": "أحمر / 1.8 م", "sku": "HS-0107-RED-18", "qty": 10, "unit_price": 1250 },
+    { "product": "فحم طبيعي", "variant": "علبة 25 قطعة", "sku": "CH-0310-25", "qty": 6, "unit_price": 3800 }
+  ],
+  "discount": 5000,
+  "paid": 20000,
+  "note": "ملاحظة: رقم الطلب PO-2026/1029 — التسليم خلال 3 أيام، الدفعة المستلمة ₪ 200.00 نقداً.",
+  "footer": "شكراً لتعاملكم معنا — Thank you (نص تذييل تجريبي)"
+}

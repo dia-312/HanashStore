@@ -1,0 +1,22 @@
+services:
+  api:
+    build: ./api
+    environment:
+      SHARED_DIR: /app/shared
+      FONTS_DIR: /app/fonts
+    volumes:
+      - ./shared:/app/shared:ro
+      - ./web/public/fonts:/app/fonts:ro
+      - ./web/public/media:/out   # target of: docker compose run --rm api python seed.py /out
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    ports:
+      - "8080:8080"      # plain HTTP; the Cloudflare tunnel adds TLS
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web/dist:/srv:ro
+    depends_on:
+      - api
+    restart: unless-stopped

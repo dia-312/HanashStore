@@ -1,0 +1,38 @@
+/* Shared by the Jinja2 template (WeasyPrint PDF) and the React component (html-to-image PNG).
+   @font-face is declared separately on each side because the font URL differs. */
+.inv {
+  direction: rtl;
+  font-family: "Plex Arabic", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #14213d;
+}
+.inv bdi { unicode-bidi: isolate; }
+.inv table { width: 100%; border-collapse: collapse; }
+.inv .muted { color: #5b6478; }
+.inv .ltr { direction: ltr; unicode-bidi: isolate; display: inline-block; }
+
+.inv .head td { vertical-align: top; padding: 0; }
+.inv .head .meta { text-align: end; }
+.inv .biz-name { font-size: 22px; font-weight: 700; }
+.inv .title { font-size: 20px; font-weight: 700; color: #f28c28; }
+
+.inv .cust { margin: 18px 0 14px; padding: 10px 14px; background: #f6f3ec; border-radius: 8px; }
+.inv .cust .name { font-weight: 700; }
+
+.inv .lines th {
+  background: #14213d; color: #fff; font-weight: 700;
+  padding: 8px 10px; text-align: start;
+}
+.inv .lines td { padding: 8px 10px; border-bottom: 1px solid #d9d4c7; vertical-align: top; }
+.inv .lines .num { text-align: end; white-space: nowrap; }
+.inv .lines .sku { font-size: 11px; color: #5b6478; }
+
+.inv .totals { width: 55%; margin-inline-start: auto; margin-top: 14px; }
+.inv .totals td { padding: 5px 10px; }
+.inv .totals td:last-child { text-align: end; white-space: nowrap; }
+.inv .totals .grand td { font-weight: 700; font-size: 17px; border-top: 2px solid #14213d; }
+.inv .totals .remain td { font-weight: 700; color: #f28c28; }
+
+.inv .note { margin-top: 18px; padding: 10px 14px; border: 1px dashed #3fa7d6; border-radius: 8px; }
+.inv .footer { margin-top: 26px; text-align: center; color: #5b6478; font-size: 12px; }

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>{{ inv.number }}</title>
+<style>
+@font-face { font-family: "Plex Arabic"; src: url("file://{{ fonts_dir }}/IBMPlexSansArabic-Regular.woff2") format("woff2"); font-weight: 400; }
+@font-face { font-family: "Plex Arabic"; src: url("file://{{ fonts_dir }}/IBMPlexSansArabic-Bold.woff2") format("woff2"); font-weight: 700; }
+@page { size: A4; margin: 14mm; }
+body { margin: 0; }
+{{ shared_css | safe }}
+</style>
+</head>
+<body>
+{# Markup mirrors spike/web/src/invoice/InvoiceView.tsx element for element; styles come from shared/invoice.css. #}
+<div class="inv" dir="rtl" lang="ar">
+  <table class="head"><tbody><tr>
+    <td class="biz">
+      <div class="biz-name">{{ inv.business.name }}</div>
+      <div class="muted">هاتف: <bdi dir="ltr">{{ inv.business.phone }}</bdi></div>
+    </td>
+    <td class="meta">
+      <div class="title">فاتورة مبيعات</div>
+      <div><bdi dir="ltr">{{ inv.number }}</bdi></div>
+      <div>التاريخ: <bdi dir="ltr">{{ inv.issued_at }}</bdi></div>
+    </td>
+  </tr></tbody></table>
+
+  <div class="cust">
+    <div class="name">{{ inv.customer.name }} — {{ inv.customer.shop }}</div>
+    <div class="muted">هاتف: <bdi dir="ltr">{{ inv.customer.phone }}</bdi></div>
+  </div>
+
+  <table class="lines">
+    <thead><tr><th>#</th><th>المنتج</th><th>النوع</th><th>الكمية</th><th>سعر الوحدة</th><th>الإجمالي</th></tr></thead>
+    <tbody>
+    {% for l in inv.lines %}
+      <tr>
+        <td>{{ loop.index }}</td>
+        <td>{{ l.product }}<div class="sku"><bdi dir="ltr">{{ l.sku }}</bdi></div></td>
+        <td>{{ l.variant }}</td>
+        <td class="num"><bdi dir="ltr">{{ l.qty }}</bdi></td>
+        <td class="num"><bdi dir="ltr">{{ l.unit_price | money }}</bdi></td>
+        <td class="num"><bdi dir="ltr">{{ (l.qty * l.unit_price) | money }}</bdi></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals"><tbody>
+    <tr><td>المجموع</td><td><bdi dir="ltr">{{ totals.subtotal | money }}</bdi></td></tr>
+    {% if inv.discount > 0 %}<tr><td>الخصم</td><td><bdi dir="ltr">{{ inv.discount | money }}</bdi></td></tr>{% endif %}
+    <tr class="grand"><td>الإجمالي النهائي</td><td><bdi dir="ltr">{{ totals.total | money }}</bdi></td></tr>
+    <tr><td>المدفوع الآن</td><td><bdi dir="ltr">{{ inv.paid | money }}</bdi></td></tr>
+    <tr class="remain"><td>المتبقي على هذه الفاتورة</td><td><bdi dir="ltr">{{ totals.remaining | money }}</bdi></td></tr>
+  </tbody></table>
+
+  <div class="note">
+    ملاحظة: رقم الطلب <bdi dir="ltr">PO-2026/1029</bdi> — التسليم خلال <bdi dir="ltr">3</bdi> أيام، الدفعة المستلمة <bdi dir="ltr">{{ inv.paid | money }}</bdi> نقداً.
+  </div>
+  <div class="footer">{{ inv.footer }}</div>
+</div>
+</body>
+</html>

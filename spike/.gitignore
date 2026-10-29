@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dev-dist/
+web/public/media/
+__pycache__/
+*.pyc
+.env
+.venv/
+.tools/

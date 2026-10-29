@@ -1,0 +1,5 @@
+fastapi
+uvicorn
+weasyprint
+jinja2
+pillow

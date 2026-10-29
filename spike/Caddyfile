@@ -1,0 +1,23 @@
+{
+	auto_https off
+}
+
+:8080 {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	handle {
+		root * /srv
+		# Hashed build files and media never change under the same URL.
+		@immutable path /assets/* /fonts/* /media/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		# The service worker and the HTML shell must always be revalidated.
+		@shell path /sw.js /index.html /registerSW.js /manifest.webmanifest /
+		header @shell Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+}
