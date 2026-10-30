@@ -25,6 +25,8 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# CI runs the bare `pytest` command, which does not put the project folder on sys.path.
+pythonpath = ["."]
 
 [tool.ruff.lint.per-file-ignores]
 # conftest must set environment variables before importing the app, so its imports can't be sorted to the top.
