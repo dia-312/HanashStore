@@ -47,4 +47,6 @@ Full requirements: docs/SPEC.md. Read the relevant section before every task. If
 - Pending client inputs in SPEC section 16: use placeholders, never invent values.
 
 ## Current status
-M0 not started.
+M0 (spike) done: all section 11 checks passed on the real iPad as a Home Screen app (offline storage survives close and restart, 2,000-variant grid opens in ~60 ms and scrolls at ~60 fps, Arabic PDF and PNG shared to WhatsApp). Details: `docs/M0-REPORT.md` on branch `spike/m0` (throwaway, kept for reference, not merged).
+Carry into M1: keep "prepare, then share" (two taps) as the primary iOS share flow; the PNG path needs a warm-up render; re-measure scroll on the real catalog.
+Next: M1 (Foundation), not started.
