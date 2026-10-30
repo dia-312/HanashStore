@@ -26,6 +26,10 @@ Done when (SPEC section 15): the client's real Excel file imports with correct s
 | Compose stack | migration ran on start; photo uploaded through Caddy and served from `/media` with `Cache-Control: public, max-age=31536000, immutable` |
 | Built-in browser, real screens | catalog with 400 products in a 5-column grid, product edit (price 887 → 900.50, audit row written), stock-in +10, count to 380 (difference −4), damage −5, history with running totals, importer: a bad row blocks the import, a good file imports; database quantities equal the file exactly and `recompute-stock` reports no mismatch |
 
+| Browser journey in WebKit (Safari's engine, iPad Pro 11 viewport), `bash scripts/e2e.sh` | 7 of 7 pass on a fresh throwaway stack: login + PIN, a file with a bad row refused and nothing saved, the good file imports with the exact quantities and prices of the file, catalog + search, price edit, photo upload, stock in / count / damage with history, negative stock refused (409) |
+
+The WebKit run is the closest check a PC can do, but it is not an iPad: no camera, no touch hardware, PC speed. It does not replace the iPad check. Sample import files are in `samples/` (`import-good.xlsx`, `import-with-error.xlsx`, made by `apps/api/scripts/make_sample_import.py`). The e2e stack (`docker-compose.e2e.yml`) is separate from the dev stack and uses its own throwaway password; `@playwright/test` is a new dev dependency. The test is not part of CI yet.
+
 A bug found by looking at the real screen, not by the tests: the catalog's width observer never attached (the list appears after the data loads), so the grid stayed at 2 huge columns. Fixed by keeping the scroll element in state.
 
 ## Not verified
