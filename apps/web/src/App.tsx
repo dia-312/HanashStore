@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { ar } from './i18n/ar'
+import { Catalog } from './screens/Catalog'
 import { EmptyPage } from './screens/EmptyPage'
 import { Lock } from './screens/Lock'
 import { Login } from './screens/Login'
@@ -9,16 +10,23 @@ import { Shell } from './screens/Shell'
 import { useAuth } from './store'
 import { useAutoLock } from './useAutoLock'
 
-// Settings is off the sales path, so it loads on demand (SPEC section 17).
+// Everything off the sales path loads on demand (SPEC section 17): settings, product editing,
+// stock screens, category management and the importer.
 const Settings = lazy(() => import('./screens/Settings'))
+const ProductPage = lazy(() => import('./screens/product/ProductPage'))
+const Stock = lazy(() => import('./screens/stock/Stock'))
+const Categories = lazy(() => import('./screens/settings/Categories'))
+const ImportProducts = lazy(() => import('./screens/settings/ImportProducts'))
 
 const pages = [
-  { path: 'catalog', ...ar.empty.catalog },
   { path: 'customers', ...ar.empty.customers },
   { path: 'invoices', ...ar.empty.invoices },
-  { path: 'stock', ...ar.empty.stock },
   { path: 'reports', ...ar.empty.reports },
 ]
+
+const lazyPage = (page: React.ReactNode) => (
+  <Suspense fallback={<p>{ar.common.loading}</p>}>{page}</Suspense>
+)
 
 export function App() {
   const status = useAuth((s) => s.status)
@@ -47,14 +55,12 @@ export function App() {
               {pages.map(({ path, ...page }) => (
                 <Route key={path} path={path} element={<EmptyPage {...page} />} />
               ))}
-              <Route
-                path="settings"
-                element={
-                  <Suspense fallback={<p>{ar.common.loading}</p>}>
-                    <Settings />
-                  </Suspense>
-                }
-              />
+              <Route path="catalog" element={<Catalog />} />
+              <Route path="catalog/:productId" element={lazyPage(<ProductPage />)} />
+              <Route path="stock" element={lazyPage(<Stock />)} />
+              <Route path="settings" element={lazyPage(<Settings />)} />
+              <Route path="settings/categories" element={lazyPage(<Categories />)} />
+              <Route path="settings/import" element={lazyPage(<ImportProducts />)} />
               <Route path="*" element={<EmptyPage {...ar.empty.home} />} />
             </Route>
           </Routes>

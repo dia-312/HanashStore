@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Link } from 'react-router'
 import { ar } from '../i18n/ar'
 import { useAuth } from '../store'
 import { SetPin } from './SetPin'
@@ -49,6 +50,12 @@ export default function Settings() {
         </p>
       )}
       <div className="grid gap-3">
+        <Link to="/settings/categories" className={`${button} flex items-center`}>
+          {ar.settings.categories}
+        </Link>
+        <Link to="/settings/import" className={`${button} flex items-center`}>
+          {ar.settings.importProducts}
+        </Link>
         <button type="button" className={button} onClick={lock}>
           {ar.settings.lockNow}
         </button>

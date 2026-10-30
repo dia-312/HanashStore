@@ -82,6 +82,8 @@ jobs:
             -H 'Content-Type: application/json' -H 'X-Requested-With: app' \
             -d '{"password":"ci-only-login-password"}'
           curl -fsS http://localhost:8080/ | grep -q '<div id="root">'
+          # /media is served by Caddy from the shared volume: a missing file is a plain 404.
+          test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/media/nothing.webp)" = 404
       - name: Logs on failure
         if: failure()
         run: docker compose logs

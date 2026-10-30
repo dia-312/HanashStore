@@ -1,4 +1,5 @@
 import os
+import tempfile
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -22,6 +23,7 @@ def _test_database_url() -> str:
 # Settings are read once, so this must run before anything imports app.config.
 os.environ["DATABASE_URL"] = _test_database_url()
 os.environ["COOKIE_SECURE"] = "true"
+os.environ["MEDIA_DIR"] = tempfile.mkdtemp(prefix="sales-media-")
 os.environ["ARGON2_TIME_COST"] = "1"
 os.environ["ARGON2_MEMORY_KIB"] = "64"
 
@@ -68,8 +70,14 @@ def _migrated_database() -> Iterator[None]:
 @pytest.fixture(autouse=True)
 def _clean_tables(_migrated_database: None) -> None:
     with get_engine().begin() as conn:
-        conn.execute(text("TRUNCATE sessions, devices, users, settings"))
+        conn.execute(
+            text(
+                "TRUNCATE audit_log, stock_movements, product_images, product_variants, products,"
+                " categories, sessions, devices, users, settings"
+            )
+        )
         conn.execute(text("UPDATE sync_clock SET last_seq = 0"))
+        conn.execute(text("ALTER SEQUENCE sku_seq RESTART"))
     app.state.login_limiter = LoginLimiter()
 
 
@@ -93,3 +101,11 @@ def client() -> Iterator[TestClient]:
 @pytest.fixture
 def user(db: Session) -> None:
     create_user(db, "Rep", PASSWORD)
+
+
+@pytest.fixture
+def api(client: TestClient, user: None) -> TestClient:
+    """A client that is already logged in."""
+    r = client.post("/api/v1/auth/login", json={"password": PASSWORD})
+    assert r.status_code == 200
+    return client

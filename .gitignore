@@ -17,3 +17,4 @@ playwright-report/
 test-results/
 
 apps/api/seed-data/
+apps/api/media/

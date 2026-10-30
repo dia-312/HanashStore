@@ -31,9 +31,17 @@ export async function api<T = void>(
       credentials: 'same-origin',
       headers: {
         'X-Requested-With': 'app', // required on writes by the server (CSRF)
-        ...(options.body === undefined ? {} : { 'Content-Type': 'application/json' }),
+        // A FormData body sets its own multipart Content-Type (with the boundary).
+        ...(options.body === undefined || options.body instanceof FormData
+          ? {}
+          : { 'Content-Type': 'application/json' }),
       },
-      body: options.body === undefined ? undefined : JSON.stringify(options.body),
+      body:
+        options.body === undefined
+          ? undefined
+          : options.body instanceof FormData
+            ? options.body
+            : JSON.stringify(options.body),
     })
   } catch {
     throw new ApiError(0, 'NETWORK', 'No connection')

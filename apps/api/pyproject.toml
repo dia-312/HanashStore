@@ -20,7 +20,7 @@ explicit_package_bases = true
 exclude = [".venv", "alembic/versions"]
 
 [[tool.mypy.overrides]]
-module = ["alembic.*"]
+module = ["alembic.*", "openpyxl.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

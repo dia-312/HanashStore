@@ -1,14 +1,28 @@
+import mimetypes
 from collections.abc import Awaitable, Callable
 
 from fastapi import FastAPI, Request, Response
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
 
-from app import clock
+from app import clock, storage
 from app.db import get_engine
 from app.errors import error_response, install_error_handlers
 from app.ratelimit import LoginLimiter
-from app.routers import auth, devices
+from app.routers import (
+    auth,
+    categories,
+    devices,
+    images,
+    imports,
+    products,
+    stock,
+    variants,
+)
+
+# The Windows registry has no entry for WebP, which would make dev serve images as octet-stream.
+mimetypes.add_type("image/webp", ".webp")
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -45,6 +59,10 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(devices.router, prefix="/api/v1")
+    for module in (categories, products, variants, images, stock, imports):
+        app.include_router(module.router, prefix="/api/v1")
+    # Caddy serves /media straight from the volume in production; this keeps dev and tests simple.
+    app.mount("/media", StaticFiles(directory=storage.media_root(), check_dir=False), name="media")
     return app
 
 

@@ -10,6 +10,8 @@ class Settings(BaseSettings):
     # Must be true in production (HTTPS only). Local plain-HTTP development sets it to false.
     cookie_secure: bool = True
     session_days: int = 30
+    # Product images: written by the API, served at /media by Caddy (and by the API itself in dev).
+    media_dir: str = "./media"
     # argon2id cost. Defaults are argon2-cffi's; tests lower them to stay fast.
     argon2_time_cost: int = 3
     argon2_memory_kib: int = 65536
