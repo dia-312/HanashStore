@@ -1,0 +1,33 @@
+[project]
+name = "hanash-api"
+version = "0.1.0"
+requires-python = ">=3.12"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = [".venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+plugins = ["pydantic.mypy"]
+mypy_path = "."
+explicit_package_bases = true
+exclude = [".venv", "alembic/versions"]
+
+[[tool.mypy.overrides]]
+module = ["alembic.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint.per-file-ignores]
+# conftest must set environment variables before importing the app, so its imports can't be sorted to the top.
+"tests/conftest.py" = ["E402", "I001"]
+# FastAPI's Depends() in defaults is how it injects dependencies.
+"app/**" = ["B008"]

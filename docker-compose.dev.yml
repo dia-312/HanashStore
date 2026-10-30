@@ -1,0 +1,14 @@
+# Development extras. Use: docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432" # so pytest on the host can reach the database
+
+  # Public HTTPS URL for the iPad (Cloudflare quick tunnel). The URL is random and changes
+  # whenever this container is recreated; read it with: docker compose logs tunnel
+  tunnel:
+    image: cloudflare/cloudflared:latest
+    command: tunnel --no-autoupdate --url http://caddy:8080
+    depends_on:
+      - caddy
+    profiles: ["tunnel"]

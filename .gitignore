@@ -1,0 +1,17 @@
+node_modules/
+dist/
+dev-dist/
+coverage/
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+.claude/
+# M0 leftovers that live untracked on this branch; the spike itself is on spike/m0
+spike/
+apps/web/public/media/
+playwright-report/
+test-results/
