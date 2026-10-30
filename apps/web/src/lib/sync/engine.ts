@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { getMeta, setMeta } from '../../db'
 import { ApiError } from '../api'
 import { runImageQueue } from './images'
+import { pendingCount } from './outbox'
 import { pullAll } from './pull'
 import { pushPending } from './push'
 
@@ -50,25 +51,47 @@ export const setSyncHooks = (next: SyncHooks) => {
 }
 
 let running: Promise<void> | null = null
+let again = false
 
-/** Push waiting commands, then pull. One at a time: a call during a run joins that run. */
+/** One push and pull. Returns false when it failed (the reason is in the store). */
+async function runOnce(): Promise<boolean> {
+  try {
+    await pushPending()
+    await pullAll()
+    const now = Date.now()
+    await setMeta('lastSyncAt', now)
+    useSync.setState({ lastSyncAt: now, lastError: null, firstSyncDone: true })
+    void runImageQueue() // after first paint and never awaited: images must not delay anything
+    return true
+  } catch (e) {
+    if (e instanceof ApiError && e.code === 'DEVICE_REVOKED') hooks.onDeviceRevoked()
+    else if (e instanceof ApiError && e.code === 'UNAUTHENTICATED') hooks.onSessionExpired()
+    useSync.setState({ lastError: e instanceof ApiError ? e.code : 'UNKNOWN' })
+    return false
+  }
+}
+
+/**
+ * Push waiting commands, then pull. One run at a time. A call made while a run is in progress joins
+ * it, and if a command was added meanwhile (the push had already looked at the outbox) a second
+ * round follows at once, so a change never waits for the next minute.
+ */
 export function syncNow(): Promise<void> {
-  if (running) return running
+  if (running) {
+    again = true
+    return running
+  }
   if (!navigator.onLine) return Promise.resolve()
   useSync.setState({ syncing: true })
   running = (async () => {
     try {
-      await pushPending()
-      await pullAll()
-      const now = Date.now()
-      await setMeta('lastSyncAt', now)
-      useSync.setState({ lastSyncAt: now, lastError: null, firstSyncDone: true })
-      void runImageQueue() // after first paint and never awaited: images must not delay anything
-    } catch (e) {
-      if (e instanceof ApiError && e.code === 'DEVICE_REVOKED') hooks.onDeviceRevoked()
-      else if (e instanceof ApiError && e.code === 'UNAUTHENTICATED') hooks.onSessionExpired()
-      useSync.setState({ lastError: e instanceof ApiError ? e.code : 'UNKNOWN' })
+      let ok = await runOnce()
+      while (ok && again && navigator.onLine && (await pendingCount()) > 0) {
+        again = false
+        ok = await runOnce()
+      }
     } finally {
+      again = false
       useSync.setState({ syncing: false })
       running = null
     }

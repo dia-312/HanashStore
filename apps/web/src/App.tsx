@@ -2,6 +2,7 @@ import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { ar } from './i18n/ar'
 import { startSyncLoop } from './lib/sync/engine'
+import { resumeImageDownloads, setImagesPaused } from './lib/sync/images'
 import { Catalog } from './screens/Catalog'
 import { EmptyPage } from './screens/EmptyPage'
 import { Lock } from './screens/Lock'
@@ -38,6 +39,13 @@ export function App() {
 
   // Sync runs whenever this device is signed in, also behind the lock screen.
   useEffect(() => (signedIn ? startSyncLoop() : undefined), [signedIn])
+
+  // Product images download only once the app is open for use: on the very first start they would
+  // otherwise compete with the login and PIN screens for the network and the processor.
+  useEffect(() => {
+    setImagesPaused(status !== 'unlocked')
+    if (status === 'unlocked') void resumeImageDownloads()
+  }, [status])
 
   useEffect(() => {
     void boot()

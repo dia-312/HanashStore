@@ -1,4 +1,10 @@
-import { expect, test, type Page } from '@playwright/test'
+import {
+  expect,
+  test,
+  type APIRequestContext,
+  type Page,
+  type PlaywrightWorkerArgs,
+} from '@playwright/test'
 import path from 'node:path'
 import { ar } from '../src/i18n/ar'
 
@@ -31,9 +37,23 @@ interface Product {
 test.describe.configure({ mode: 'serial' })
 
 let page: Page
+let pw: PlaywrightWorkerArgs['playwright']
+let origin = ''
+let serverApi: APIRequestContext | undefined
+
+// Talks to the server directly, with the browser's session, so it keeps working while the browser
+// itself is switched offline.
+const server = async () => {
+  serverApi ??= await pw.request.newContext({
+    baseURL: origin,
+    storageState: await page.context().storageState(),
+    extraHTTPHeaders: { 'X-Requested-With': 'app' },
+  })
+  return serverApi
+}
 
 const json = async <T>(url: string): Promise<T> => {
-  const res = await page.request.get(url)
+  const res = await (await server()).get(url)
   expect(res.ok(), `${url} -> ${res.status()}`).toBe(true)
   return (await res.json()) as T
 }
@@ -57,10 +77,15 @@ const pressPin = async (pin: string) => {
   }
 }
 
-test.beforeAll(async ({ browser }) => {
+test.beforeAll(async ({ browser, playwright, baseURL }) => {
+  pw = playwright
+  origin = baseURL ?? ''
   page = await (await browser.newContext()).newPage()
 })
-test.afterAll(async () => page.context().close())
+test.afterAll(async () => {
+  await serverApi?.dispose()
+  await page.context().close()
+})
 
 test('login and PIN', async () => {
   await page.goto('/')
@@ -75,6 +100,48 @@ test('login and PIN', async () => {
   await pressPin(PIN)
   await page.getByRole('button', { name: ar.pad.confirm }).click()
   await expect(page.getByRole('link', { name: ar.nav.catalog, exact: true }).first()).toBeVisible()
+})
+
+test('first sync puts the whole catalog on the device (seeded stack only)', async () => {
+  test.skip(!process.env.E2E_SEED, 'needs the large seed: see scripts/e2e.sh')
+  // Browser storage in headless WebKit on a PC is far slower than on an iPad (about 15 ms per row
+  // written), so this one is given plenty of time. The point is that it ends up complete.
+  test.setTimeout(400_000)
+  const started = Date.now()
+  await goTo(ar.nav.catalog)
+  await expect(page.locator('a[href^="/catalog/"]').first()).toBeVisible({ timeout: 120_000 })
+  console.log('first sync to first row (ms):', Date.now() - started)
+
+  const counts = () =>
+    page.evaluate(
+      () =>
+        new Promise<Record<string, number>>((resolve) => {
+          const open = indexedDB.open('sales-rep')
+          open.onsuccess = () => {
+            const tables = ['products', 'variants', 'images']
+            const tx = open.result.transaction(tables)
+            const out: Record<string, number> = {}
+            for (const name of tables) {
+              const request = tx.objectStore(name).count()
+              request.onsuccess = () => {
+                out[name] = request.result
+                if (Object.keys(out).length === tables.length) resolve(out)
+              }
+            }
+          }
+        }),
+    )
+  await expect
+    .poll(async () => (await counts()).variants, { timeout: 300_000 })
+    .toBeGreaterThanOrEqual(2000)
+  expect((await counts()).products).toBeGreaterThanOrEqual(400)
+
+  // Opening the catalog again reads only the device.
+  await goTo(ar.nav.stock)
+  const reopened = Date.now()
+  await goTo(ar.nav.catalog)
+  await expect(page.locator('a[href^="/catalog/"]').first()).toBeVisible()
+  console.log('catalog reopened from the device (ms):', Date.now() - reopened)
 })
 
 test('a file with a bad row is refused and saves nothing', async () => {
@@ -107,9 +174,7 @@ test('catalog shows the products and search finds them', async () => {
   const started = Date.now()
   await goTo(ar.nav.catalog)
   await expect(page.getByText('شيشة نخلة صغيرة').first()).toBeVisible()
-  test
-    .info()
-    .annotations.push({ type: 'catalog-open-ms', description: String(Date.now() - started) })
+  console.log('catalog open (ms):', Date.now() - started)
   await page.getByRole('searchbox', { name: ar.catalog.search }).fill('نخله')
   await expect(page.getByText('شيشة نخلة صغيرة').first()).toBeVisible()
   await expect(page.getByText('جمر سريع الاشتعال')).toHaveCount(0)
@@ -200,12 +265,164 @@ test('stock in, count and damage change the numbers and the history', async () =
   expect(moves.items.map((m) => m.running_total)).toContain(80)
 })
 
-test('a negative stock is refused', async () => {
+const FOHA = 'فوهة زجاج' // imported with 120 in stock
+
+const device = async () => (await json<{ device: { id: string } }>('/api/v1/auth/me')).device.id
+
+const pushToServer = async (commands: unknown[]) => {
+  const res = await (
+    await server()
+  ).post('/api/v1/sync/push', {
+    data: { device_id: await device(), commands },
+  })
+  expect(res.ok(), await res.text()).toBe(true)
+  return (await res.json()) as { results: { status: string; error?: { code: string } }[] }
+}
+
+const command = (type: string, payload: unknown) => ({
+  id: crypto.randomUUID(),
+  type,
+  schema_version: 1,
+  created_at: new Date().toISOString(),
+  payload,
+})
+
+const fohaStock = async () => (await findProduct(FOHA)).variants[0]?.stock_qty
+const chip = (text: RegExp) => page.getByRole('link', { name: text })
+
+test('a damage larger than the stock is refused by the server and changes nothing', async () => {
   const product = await findProduct('جمر سريع الاشتعال')
   const variant = product.variants[0]
-  const res = await page.request.post('/api/v1/stock/damage', {
-    headers: { 'X-Requested-With': 'app' },
-    data: { id: crypto.randomUUID(), variant_id: variant?.id, qty: 100000, note: 'x' },
+  const before = variant?.stock_qty
+  const { results } = await pushToServer([
+    command('stock.damage', {
+      movement_id: crypto.randomUUID(),
+      variant_id: variant?.id,
+      qty: 100_000,
+      note: 'x',
+    }),
+  ])
+  expect(results[0]).toMatchObject({ status: 'rejected', error: { code: 'INSUFFICIENT_STOCK' } })
+  expect((await findProduct('جمر سريع الاشتعال')).variants[0]?.stock_qty).toBe(before)
+})
+
+test('the same command sent twice applies once', async () => {
+  const variant = (await findProduct(FOHA)).variants[0]
+  const before = (await fohaStock()) ?? 0
+  const once = command('stock.purchase', {
+    note: null,
+    items: [{ movement_id: crypto.randomUUID(), variant_id: variant?.id, qty: 3 }],
   })
-  expect(res.status()).toBe(409)
+  const first = await pushToServer([once])
+  const second = await pushToServer([once])
+  expect(first.results[0]?.status).toBe('applied')
+  expect(second.results).toEqual(first.results)
+  expect(await fohaStock()).toBe(before + 3)
+})
+
+// What the server changed meanwhile reaches the device at the next sync; this asks for one.
+const syncFromDevice = async () => {
+  await chip(/المزامنة|بانتظار|مشكلة/).click()
+  const now = page.getByRole('button', { name: ar.sync.now })
+  await now.click()
+  await expect(now).toBeEnabled()
+}
+
+test('offline: the catalog is there, a stock-in is saved on the device and shown at once', async () => {
+  await syncFromDevice() // the device has to know the +3 the previous test made on the server
+  const before = (await fohaStock()) ?? 0
+  await page.context().setOffline(true)
+  await expect(chip(/بدون اتصال/)).toBeVisible()
+
+  await goTo(ar.nav.catalog)
+  await expect(page.getByText(FOHA).first()).toBeVisible()
+
+  await goTo(ar.nav.stock)
+  await page.getByRole('searchbox', { name: ar.stock.search }).fill('فوهة')
+  await page
+    .getByRole('button', { name: /فوهة زجاج/ })
+    .first()
+    .click()
+  await page.getByLabel(new RegExp(`^${ar.stock.qty}`)).fill('7')
+  await page.getByRole('button', { name: ar.stock.submitIn }).click()
+  await page.getByRole('dialog').getByRole('button', { name: ar.form.confirm }).click()
+  await expect(page.getByText(ar.stock.queued)).toBeVisible()
+  await expect(chip(/بانتظار الإرسال/)).toBeVisible()
+
+  // The catalog already shows the new quantity; the server has not heard about it yet.
+  await goTo(ar.nav.catalog)
+  await expect(page.getByText(new RegExp(`متوفر.*${before + 7}`)).first()).toBeVisible()
+  expect(await fohaStock()).toBe(before)
+
+  // The network comes back: it is sent without anyone pressing anything.
+  await page.context().setOffline(false)
+  await expect.poll(fohaStock, { timeout: 60_000 }).toBe(before + 7)
+  await expect(chip(/تمت المزامنة/)).toBeVisible({ timeout: 60_000 })
+})
+
+test('offline: a write-off larger than the stock cannot even be confirmed', async () => {
+  await page.context().setOffline(true)
+  await goTo(ar.nav.stock)
+  await page.getByRole('tab', { name: ar.stock.tabDamage }).click()
+  await page.getByRole('searchbox', { name: ar.stock.search }).fill('فوهة')
+  await page
+    .getByRole('button', { name: /فوهة زجاج/ })
+    .first()
+    .click()
+  await page.getByLabel(ar.stock.damageQty).fill('100000')
+  await page.getByLabel(ar.stock.damageReason).fill('x')
+  await expect(page.getByRole('button', { name: ar.stock.submitDamage })).toBeDisabled()
+  await page.context().setOffline(false)
+})
+
+test('a command the server refuses shows on the sync screen and can be discarded', async () => {
+  const variant = (await findProduct(FOHA)).variants[0]
+  await page.context().setOffline(true)
+
+  // Offline the rep writes off 50, which the device allows (it shows well over 50).
+  await goTo(ar.nav.stock)
+  await page.getByRole('tab', { name: ar.stock.tabDamage }).click()
+  await page.getByRole('searchbox', { name: ar.stock.search }).fill('فوهة')
+  await page
+    .getByRole('button', { name: /فوهة زجاج/ })
+    .first()
+    .click()
+  await page.getByLabel(ar.stock.damageQty).fill('50')
+  await page.getByLabel(ar.stock.damageReason).fill('كسر')
+  await page.getByRole('button', { name: ar.stock.submitDamage }).click()
+  await page.getByRole('dialog').getByRole('button', { name: ar.form.confirm }).click()
+  await expect(page.getByText(ar.stock.queued)).toBeVisible()
+
+  // Meanwhile the server's stock drops to 10 (a count from elsewhere): the write-off no longer fits.
+  await pushToServer([
+    command('stock.adjust', {
+      movement_id: crypto.randomUUID(),
+      variant_id: variant?.id,
+      counted_qty: 10,
+      expected_qty: 130,
+      note: 'count',
+    }),
+  ])
+  await page.context().setOffline(false)
+
+  await expect(chip(/مشكلة في المزامنة/)).toBeVisible({ timeout: 60_000 })
+  await chip(/مشكلة في المزامنة/).click()
+  await expect(page.getByText(/الكمية المتوفرة على الخادم أقل من المطلوب \(10\)/)).toBeVisible()
+  expect(await fohaStock()).toBe(10)
+
+  await page.getByRole('button', { name: ar.sync.discard, exact: true }).first().click()
+  await page.getByRole('dialog').getByRole('button', { name: ar.sync.discard }).click()
+  await expect(page.getByText(ar.sync.nothingWrong)).toBeVisible()
+  await expect(chip(/تمت المزامنة|مشكلة/)).toBeVisible()
+})
+
+test('closed and reopened offline, the app unlocks with the PIN and still has the catalog', async () => {
+  await page.context().setOffline(true)
+  await page.reload()
+  await expect(page.getByRole('heading', { name: ar.lock.title })).toBeVisible({ timeout: 30_000 })
+  await pressPin(PIN)
+  await expect(page.getByRole('link', { name: ar.nav.catalog, exact: true }).first()).toBeVisible()
+  await goTo(ar.nav.catalog)
+  await expect(page.getByText('شيشة نخلة صغيرة').first()).toBeVisible()
+  await page.context().setOffline(false)
 })

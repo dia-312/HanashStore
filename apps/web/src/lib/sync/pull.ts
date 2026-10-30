@@ -1,3 +1,4 @@
+import type { Table } from 'dexie'
 import {
   db,
   getMeta,
@@ -22,47 +23,36 @@ export interface PullPage {
 
 export const CURSOR_KEY = 'syncCursor'
 
-/** Rows older than what we already hold are skipped: a push result may be newer than a page. */
-async function putNewer<T extends { id: string; change_seq: number }>(
-  rows: T[],
-  get: (ids: string[]) => Promise<(T | undefined)[]>,
-  put: (rows: T[]) => Promise<unknown>,
-): Promise<void> {
-  if (rows.length === 0) return
-  const existing = await get(rows.map((r) => r.id))
-  await put(rows.filter((row, i) => !existing[i] || existing[i].change_seq <= row.change_seq))
-}
+/** Rows written per IndexedDB transaction. One huge transaction would hold every other read and
+ * write (the PIN record, the outbox) until it finished, so a big page goes in as several. */
+export const CHUNK = 250
 
-/** Applies one page and moves the cursor, all in a single transaction. */
+/**
+ * Applies one page. The rows go in in chunks, each its own transaction, and the cursor moves last,
+ * so a page cut short (the app closed half-way) is simply fetched and applied again: writing a row
+ * twice changes nothing.
+ */
 export async function applyPage(page: PullPage): Promise<void> {
   const { categories, products, variants, images } = page.changes
-  await db.transaction(
-    'rw',
-    [db.categories, db.products, db.variants, db.images, db.meta],
-    async () => {
-      await putNewer(
-        categories,
-        (ids) => db.categories.bulkGet(ids),
-        (rows) => db.categories.bulkPut(rows),
-      )
-      await putNewer(
-        products,
-        (ids) => db.products.bulkGet(ids),
-        (rows) => db.products.bulkPut(rows),
-      )
-      await putNewer(
-        variants,
-        (ids) => db.variants.bulkGet(ids),
-        (rows) => db.variants.bulkPut(rows),
-      )
-      await putNewer(
-        images,
-        (ids) => db.images.bulkGet(ids),
-        (rows) => db.images.bulkPut(rows),
-      )
-      await setMeta(CURSOR_KEY, page.cursor)
-    },
-  )
+  const write = async <T extends { id: string; change_seq: number }>(
+    rows: T[],
+    table: Table<T, string>,
+  ) => {
+    for (let i = 0; i < rows.length; i += CHUNK) {
+      const chunk = rows.slice(i, i + CHUNK)
+      await db.transaction('rw', table, async () => {
+        const existing = await table.bulkGet(chunk.map((r) => r.id))
+        await table.bulkPut(
+          chunk.filter((row, j) => !existing[j] || existing[j].change_seq <= row.change_seq),
+        )
+      })
+    }
+  }
+  await write(categories, db.categories as unknown as Table<DbCategory, string>)
+  await write(products, db.products as unknown as Table<DbProduct, string>)
+  await write(variants, db.variants as unknown as Table<DbVariant, string>)
+  await write(images, db.images as unknown as Table<DbImage, string>)
+  await setMeta(CURSOR_KEY, page.cursor)
 }
 
 export const pullPage = (cursor: number) => api<PullPage>(`/sync/pull?cursor=${cursor}`)

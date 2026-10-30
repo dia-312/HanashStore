@@ -365,6 +365,38 @@ describe('sync engine', () => {
     expect(fetchStub).toHaveBeenCalledTimes(1) // one pull, no push (nothing pending)
   })
 
+  it('a command made while a run is under way is sent in a second round, not a minute later', async () => {
+    const pushed: string[][] = []
+    let pulls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string, init?: { body?: string }) => {
+        if (input.includes('/sync/push')) {
+          const commands = (JSON.parse(init?.body ?? '{}') as { commands: { id: string }[] })
+            .commands
+          pushed.push(commands.map((c) => c.id))
+          return json({
+            results: commands.map((c) => ({ id: c.id, status: 'applied' })),
+            cursor: 1,
+          })
+        }
+        pulls++
+        if (pulls === 1) {
+          // The rep confirms a stock-in right now, after this run already looked at the outbox.
+          await enqueue('stock.damage', { variant_id: 'late' })
+          void syncNow()
+        }
+        return json(page({}, 0))
+      }),
+    )
+    const first = await enqueue('stock.damage', { variant_id: 'early' })
+    await syncNow()
+    expect(pushed).toHaveLength(2)
+    expect(pushed[0]).toEqual([first.id])
+    expect(pushed[1]).toHaveLength(1)
+    expect(await pendingCommands()).toHaveLength(0)
+  })
+
   it('a server error is shown, keeps the commands, and the next run tries again', async () => {
     vi.stubGlobal(
       'fetch',
