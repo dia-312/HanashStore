@@ -19,12 +19,13 @@ Always pass both compose files in development: `docker compose -f docker-compose
 - lint / format / typecheck: `npm run lint`, `npm run format`, `npm run typecheck`; api: `ruff check . && ruff format --check . && mypy app tests scripts`.
 - migrate: runs on container start; by hand `cd apps/api && alembic upgrade head`, new one `alembic revision -m "..."`.
 - bundle size: `npm run build && npm run size` (fails over 250 KB gzip, SPEC section 17).
-- large test dataset: `cd apps/api && python scripts/seed_large.py seed-data` (JSON files, not loaded into Postgres until the tables exist).
+- large test dataset: `cd apps/api && python scripts/seed_large.py seed-data` (JSON files), then load the catalog part into the dev database: `docker compose <both files> exec -T api python -m scripts.load_seed /seed` (Git Bash on Windows: prefix with `MSYS_NO_PATHCONV=1`). Customers, invoices etc. get loaders in M4/M7.
+- stock cache check: `docker compose <both files> exec -T api python -m app.cli recompute-stock [--fix]`.
 
 ## Structure
-- `apps/web/src`: `App.tsx` (switches on auth status), `store.ts` (Zustand auth/lock), `db.ts` (Dexie), `lib/` (api, lock rules, pin hash, money, uuid7), `screens/`, `i18n/ar.ts`, `sw.ts` (service worker).
-- `apps/api/app`: `main.py` (app, CSRF + X-Server-Time middleware), `routers/` (auth, devices), `models.py`, `deps.py` (session auth), `security.py`, `ratelimit.py`, `errors.py`, `cli.py`; `alembic/versions/` migrations; `tests/`; `scripts/seed_large.py`.
-- `shared/`: fixtures for both test suites (empty until M4/M8). `docs/`: SPEC, M0 and M1 notes, RESTORE (stub).
+- `apps/web/src`: `App.tsx` (switches on auth status), `store.ts` (Zustand auth/lock), `db.ts` (Dexie), `lib/` (api, catalogApi, usePagedList, lock rules, pin hash, money, normalize, errors, uuid7), `components/` (StatusBadge, ConfirmSheet, Thumb, Notices), `screens/` (Catalog in the main bundle; `product/`, `stock/`, `settings/` are lazy chunks), `i18n/ar.ts`, `sw.ts` (service worker).
+- `apps/api/app`: `main.py` (app, CSRF + X-Server-Time middleware, `/media` static in dev), `routers/` (auth, devices, categories, products, variants, images, stock, imports), `services/` (`stock.py` all stock changes, `catalog.py`, `images.py`, `importer.py`), `models.py`, `schemas.py`, `changeseq.py`, `audit.py`, `normalize.py`, `money.py`, `storage.py` (media files), `pagination.py`, `deps.py` (session auth), `security.py`, `ratelimit.py`, `errors.py`, `cli.py`; `alembic/versions/` migrations; `tests/`; `scripts/` (`seed_large.py`, `load_seed.py`).
+- `shared/`: `normalize_cases.json` (both normalization copies are tested against it); money cases arrive in M4. `docs/`: SPEC, M0, M1 and M2 notes, RESTORE (stub).
 - Root: `docker-compose.yml` (+ `.dev.yml`), `Caddyfile`, `.env.example`, `.github/workflows/ci.yml`.
 
 ## Speed comes first

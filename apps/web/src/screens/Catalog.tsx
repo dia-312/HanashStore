@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ErrorNotice, OfflineNotice } from '../components/Notices'
@@ -95,15 +95,16 @@ const ProductTile = memo(function ProductTile({
   )
 })
 
-function useWidth(ref: React.RefObject<HTMLElement | null>) {
+/** Width of an element that may only appear after data loads: pass the element itself (kept in
+ * state through a callback ref), not a ref object, so the observer starts when it mounts. */
+function useWidth(element: HTMLElement | null) {
   const [width, setWidth] = useState(0)
   useEffect(() => {
-    const element = ref.current
     if (!element) return
     const observer = new ResizeObserver(([entry]) => entry && setWidth(entry.contentRect.width))
     observer.observe(element)
     return () => observer.disconnect()
-  }, [ref])
+  }, [element])
   return width
 }
 
@@ -122,8 +123,8 @@ function ProductList({
   const list = usePagedList<ProductListItem>((cursor) =>
     catalogApi.products({ q, categoryId, includeInactive, cursor, limit: PAGE_SIZE }),
   )
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const width = useWidth(scrollRef)
+  const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
+  const width = useWidth(scroller)
   const columns = view === 'list' ? 1 : Math.max(2, Math.floor(width / 190))
   const rows = Math.ceil(list.items.length / columns)
   const columnWidth = width > 0 ? (width - GAP * (columns - 1)) / columns : 190
@@ -132,7 +133,7 @@ function ProductList({
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rows,
-    getScrollElement: () => scrollRef.current,
+    getScrollElement: () => scroller,
     estimateSize: () => (view === 'list' ? 88 + GAP : columnWidth + 150 + GAP),
     overscan: 3,
     // Until the box is measured, assume it is as tall as the window: the first frame already has rows.
@@ -175,7 +176,7 @@ function ProductList({
   }
 
   return (
-    <div ref={scrollRef} className="min-h-0 flex-1 overflow-auto">
+    <div ref={setScroller} className="min-h-0 flex-1 overflow-auto">
       <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
         {virtualizer.getVirtualItems().map((row) => (
           <div
