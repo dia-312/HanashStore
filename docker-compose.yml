@@ -19,6 +19,9 @@ services:
     environment:
       DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sales}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sales}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      MEDIA_DIR: /data/media
+    volumes:
+      - media:/data/media # product images: written here, served by caddy
     depends_on:
       postgres:
         condition: service_healthy
@@ -31,9 +34,11 @@ services:
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./apps/web/dist:/srv:ro
+      - media:/media:ro
     depends_on:
       - api
     restart: unless-stopped
 
 volumes:
   pgdata:
+  media:

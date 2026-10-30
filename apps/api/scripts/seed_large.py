@@ -5,14 +5,15 @@
 Writes deterministic JSON using the SPEC section 6 field names (ids are UUIDv7, money is integer
 agorot) plus 400 real 400px WebP thumbnails:
 
-    products.json  400        variants.json  2,000     customers.json  500
+    categories.json 5          products.json  400        variants.json  2,000
+    customers.json  500
     invoices.json  20,000 (each with its lines)         payments.json   15,000
     returns.json   1,000 (each with its lines)          thumbs/<n>.webp 400
 
-Only users, devices and settings exist as tables in M1, so nothing is loaded into Postgres yet. Each
-later milestone adds a loader for the tables it creates (M2 catalog, M4 customers and invoices, M7
-returns) and reads these files. The script checks its own output (totals, stock, return limits)
-before finishing. Fake data only.
+The catalog part (categories, products, variants, thumbnails, opening stock) is loaded into
+Postgres by `python -m scripts.load_seed <out_dir>`. Customers, invoices, payments and returns get
+a loader in the milestone that creates their tables (M4, M7). The script checks its own output
+(totals, stock, return limits) before finishing. Fake data only.
 """
 
 import argparse
@@ -223,6 +224,7 @@ def generate(out: Path, scale: float = 1.0, thumbs: bool = True) -> dict[str, li
         )
 
     data = {
+        "categories": [{"id": cid, "name": kind} for kind, cid in categories.items()],
         "products": products,
         "variants": variants,
         "customers": customers,
