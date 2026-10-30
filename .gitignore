@@ -15,3 +15,5 @@ spike/
 apps/web/public/media/
 playwright-report/
 test-results/
+
+apps/api/seed-data/

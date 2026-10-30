@@ -3,6 +3,7 @@ import uuid
 import pytest
 from sqlalchemy.orm import Session
 
+from app import cli
 from app.cli import create_user
 from app.ids import uuid7
 from app.ratelimit import LoginLimiter
@@ -78,3 +79,13 @@ def test_create_user_rules(db: Session) -> None:
     create_user(db, "Rep", "long enough password")
     with pytest.raises(ValueError, match="exactly one"):
         create_user(db, "Second", "another long password")
+
+
+def test_cli_create_user_prints_and_rejects_a_second_user(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("ADMIN_PASSWORD", "a long enough password")
+    assert cli.main(["create-user", "--name", "Rep"]) == 0
+    assert "created user Rep" in capsys.readouterr().out
+    assert cli.main(["create-user", "--name", "Again"]) == 1
+    assert "exactly one" in capsys.readouterr().err

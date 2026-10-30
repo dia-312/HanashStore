@@ -11,13 +11,21 @@ Full requirements: docs/SPEC.md. Read the relevant section before every task. If
 - Docker Compose: postgres, api, caddy (serves the built web app, proxies /api and /media, HTTPS)
 
 ## Commands
-- dev: (fill in M1)
-- test: (fill in M1)
-- lint / format / typecheck: (fill in M1)
-- migrate: (fill in M1)
+Always pass both compose files in development: `docker compose -f docker-compose.yml -f docker-compose.dev.yml ...` (the dev file publishes Postgres on 127.0.0.1:5432 for pytest; running with the base file alone recreates the container without that port).
+- dev: start Postgres (`... up -d postgres`), then `npm run dev` (web on :5173, proxies /api) and, in `apps/api`, `.venv/Scripts/uvicorn app.main:app --reload --port 8000` (set `COOKIE_SECURE=false` for plain HTTP).
+- full stack: `npm run build`, then `... up -d --build` (Caddy on http://localhost:8080). First user: `docker compose exec -T -e ADMIN_PASSWORD=... api python -m app.cli create-user --name "..."`.
+- iPad over HTTPS: `... --profile tunnel up -d tunnel`, then `docker compose logs tunnel` for the random trycloudflare URL (it changes whenever the tunnel is recreated).
+- test: `npm test` (web, Vitest) and `cd apps/api && .venv/Scripts/python -m pytest` (needs Postgres; uses its own `sales_test` database).
+- lint / format / typecheck: `npm run lint`, `npm run format`, `npm run typecheck`; api: `ruff check . && ruff format --check . && mypy app tests scripts`.
+- migrate: runs on container start; by hand `cd apps/api && alembic upgrade head`, new one `alembic revision -m "..."`.
+- bundle size: `npm run build && npm run size` (fails over 250 KB gzip, SPEC section 17).
+- large test dataset: `cd apps/api && python scripts/seed_large.py seed-data` (JSON files, not loaded into Postgres until the tables exist).
 
 ## Structure
-(folder map, fill in M1)
+- `apps/web/src`: `App.tsx` (switches on auth status), `store.ts` (Zustand auth/lock), `db.ts` (Dexie), `lib/` (api, lock rules, pin hash, money, uuid7), `screens/`, `i18n/ar.ts`, `sw.ts` (service worker).
+- `apps/api/app`: `main.py` (app, CSRF + X-Server-Time middleware), `routers/` (auth, devices), `models.py`, `deps.py` (session auth), `security.py`, `ratelimit.py`, `errors.py`, `cli.py`; `alembic/versions/` migrations; `tests/`; `scripts/seed_large.py`.
+- `shared/`: fixtures for both test suites (empty until M4/M8). `docs/`: SPEC, M0 and M1 notes, RESTORE (stub).
+- Root: `docker-compose.yml` (+ `.dev.yml`), `Caddyfile`, `.env.example`, `.github/workflows/ci.yml`.
 
 ## Speed comes first
 - The screen never waits for the network: render from Dexie, sync in the background.

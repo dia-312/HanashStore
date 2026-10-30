@@ -45,10 +45,10 @@ def main(argv: list[str] | None = None) -> int:
         try:
             with Session(get_engine()) as session:
                 user = create_user(session, args.name, password)
+                print(f"created user {user.name} ({user.id})")
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1
-        print(f"created user {user.name} ({user.id})")
     return 0
 
 

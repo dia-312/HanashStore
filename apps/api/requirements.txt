@@ -6,3 +6,4 @@ psycopg[binary]>=3
 pydantic>=2
 pydantic-settings
 argon2-cffi
+pillow
