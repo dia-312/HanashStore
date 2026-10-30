@@ -211,3 +211,36 @@ class StockDamageRequest(BaseModel):
 class StockResult(BaseModel):
     applied: int  # movements created now (0 when the whole request was a repeat)
     variants: list[VariantOut]
+
+
+class RowIssue(BaseModel):
+    row: int  # spreadsheet row number, 1 = the header row
+    field: str
+    code: str  # machine code; the app shows it in Arabic
+    detail: str | None = None
+
+
+class PreviewRow(BaseModel):
+    row: int
+    product: str
+    category: str
+    color: str | None
+    size: str | None
+    price: int
+    qty: int
+
+
+class ImportReport(BaseModel):
+    dry_run: bool
+    committed: bool
+    rows: int
+    mapped_columns: dict[str, str]
+    ignored_columns: list[str]
+    errors: list[RowIssue]
+    errors_total: int
+    new_categories: int
+    new_products: int
+    new_variants: int
+    skipped_existing: int  # variants that already exist: left untouched
+    opening_units: int
+    preview: list[PreviewRow]
