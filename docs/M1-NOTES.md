@@ -1,6 +1,6 @@
 # M1 — Foundation: notes
 
-Branch `m1-foundation` (from `main`). **Status: built and checked on the PC; iPad check and CI run still open.**
+Branch `m1-foundation` (from `main`). **Status: built; checked on the PC and on the iPad. CI run still open.**
 Done when (SPEC section 15): login works on the iPad over HTTPS, and CI is green.
 
 ## What exists
@@ -30,11 +30,15 @@ Done when (SPEC section 15): login works on the iPad over HTTPS, and CI is green
 | Compose stack on localhost:8080 | `/api/health` 200; login, cookie flags, CSRF 403 and wrong-password 401 checked with curl |
 | Real browser (built-in pane) | login, PIN setup, lock on reload, wrong PIN message, right PIN unlock, RTL shell |
 | Tunnel | page, `sw.js`, manifest and `/api/health` return 200 through the trycloudflare URL |
+| iPad, Home Screen app, HTTPS (reported by the user) | login, PIN setup, manual lock, wrong PIN, airplane-mode cold start to the Lock screen, offline PIN unlock: all passed |
+| iPad cold start to PIN screen | "good" (user's judgement, not measured in ms; budget 1.5 s) |
+| iPad `storage.persist()` | granted ("مفعّل" in Settings) |
+| Server side after the iPad login | one device "iPad" (not revoked), PIN hash stored, one active session |
 
 Bugs the tests caught while building: devices were inserted after sessions (no `relationship()`, fixed with a flush); the PIN pattern `\d` accepted Arabic-Indic digits in Python (now `[0-9]`); a datetime in the 409 body was not JSON-serializable; the CLI printed a user after its session closed.
 
 ## Not verified
-- **iPad over HTTPS, Home Screen app** (the "done" criterion): install, login, PIN, lock, airplane-mode launch to the Lock screen, PIN offline. Cold start to PIN screen time against the 1.5 s budget.
+- **Cold start time in milliseconds** on the iPad: only a judgement of "good" was reported, not a number.
 - **CI**: the workflow has not run (nothing is pushed). The `compose-smoke` job in particular is untested.
 - **Service worker offline start** cannot be proven in the built-in browser (it refuses service workers); same limit as M0.
 - **Playwright smoke test** from the plan is not done: it needs a browser download (about 150 MB, no Chrome installed here) that has not been approved. The same flow was exercised by hand in the built-in browser.

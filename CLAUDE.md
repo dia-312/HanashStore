@@ -57,4 +57,5 @@ Always pass both compose files in development: `docker compose -f docker-compose
 ## Current status
 M0 (spike) done: all section 11 checks passed on the real iPad as a Home Screen app (offline storage survives close and restart, 2,000-variant grid opens in ~60 ms and scrolls at ~60 fps, Arabic PDF and PNG shared to WhatsApp). Details: `docs/M0-REPORT.md` on branch `spike/m0` (throwaway, kept for reference, not merged).
 Carry into M1: keep "prepare, then share" (two taps) as the primary iOS share flow; the PNG path needs a warm-up render; re-measure scroll on the real catalog.
-Next: M1 (Foundation), not started.
+M1 (Foundation) built; checked on the real iPad over HTTPS as a Home Screen app (login, PIN setup, manual lock, wrong PIN, airplane-mode cold start to the Lock screen with offline PIN unlock, cold start to PIN screen within budget, persistent storage granted). Initial JS 149 KB gzip (budget 250). CI has not run yet (branch not pushed). Details: `docs/M1-NOTES.md`.
+Next: push `m1-foundation`, get CI green, then M2 (not started).
