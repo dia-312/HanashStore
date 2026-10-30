@@ -2,7 +2,8 @@
 variants, thumbnails and opening stock.
 
     python -m scripts.load_seed <seed_dir>          (from apps/api; seed_dir from seed_large.py)
-    docker compose -f docker-compose.yml -f docker-compose.dev.yml exec api \n        python -m scripts.load_seed /seed
+    docker compose <both compose files> exec api python -m scripts.load_seed /seed
+        (the dev compose file mounts apps/api/seed-data at /seed)
 
 Refuses to run when the catalog already has products. Customers, invoices, payments and returns are
 loaded by the milestones that create their tables. Fake data only: do not run it on a real database.
