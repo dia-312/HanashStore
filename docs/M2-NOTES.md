@@ -1,6 +1,6 @@
 # M2 — Catalog and stock: notes
 
-Branch `m2-catalog-stock` (from `main`). **Status: built and checked on the PC. iPad check and CI run still open, and the real-Excel criterion is open until the client's file arrives.**
+Branch `m2-catalog-stock` (from `main`). **Status: built, checked on the PC and in WebKit, tried on the real iPad by the user (all flows), CI green on PR 2. The real-Excel criterion is open until the client's file arrives.**
 Done when (SPEC section 15): the client's real Excel file imports with correct stock.
 
 ## What exists
@@ -33,8 +33,8 @@ The WebKit run is the closest check a PC can do, but it is not an iPad: no camer
 A bug found by looking at the real screen, not by the tests: the catalog's width observer never attached (the list appears after the data loads), so the grid stayed at 2 huge columns. Fixed by keeping the scroll element in state.
 
 ## Not verified
-- **iPad, Home Screen app**: catalog open time (< 300 ms) and scroll smoothness with 400 products, photo from the iPad camera, the other flows by touch.
-- **CI**: the workflow has not run on this branch (nothing pushed). The new `/media` check in `compose-smoke` is untested there.
+- **iPad numbers**: the user ran every flow on the iPad Home Screen app and reported it worked (the bad-row file was refused, the good file imported). No catalog open time or scroll figure was recorded, and the camera photo path was not reported separately.
+- **CI**: green on PR 2 (6 checks), including the new `/media` check in `compose-smoke`. The WebKit journey test is not in CI.
 - **The client's real Excel file** (the SPEC's done criterion): not received. Only generated files were imported. If its columns have other names, only `COLUMN_ALIASES` should need to change.
 - HEIC upload is not supported (no extra library): the file input lists JPEG/PNG/WebP, which makes iOS convert camera photos itself. Not proven on the device.
 - Real-world sorting of Arabic names uses the database collation; not looked at closely.

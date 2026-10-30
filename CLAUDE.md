@@ -59,4 +59,6 @@ Always pass both compose files in development: `docker compose -f docker-compose
 M0 (spike) done: all section 11 checks passed on the real iPad as a Home Screen app (offline storage survives close and restart, 2,000-variant grid opens in ~60 ms and scrolls at ~60 fps, Arabic PDF and PNG shared to WhatsApp). Details: `docs/M0-REPORT.md` on branch `spike/m0` (throwaway, kept for reference, not merged).
 Carry into M1: keep "prepare, then share" (two taps) as the primary iOS share flow; the PNG path needs a warm-up render; re-measure scroll on the real catalog.
 M1 (Foundation) built; checked on the real iPad over HTTPS as a Home Screen app (login, PIN setup, manual lock, wrong PIN, airplane-mode cold start to the Lock screen with offline PIN unlock, cold start to PIN screen within budget, persistent storage granted). Initial JS 149 KB gzip (budget 250). CI green on PR 1 (web, api, compose-smoke). Details: `docs/M1-NOTES.md`.
-Next: merge PR 1 (after your review), then M2 (not started).
+PR 1 merged.
+M2 (Catalog and stock) built; tried on the real iPad by the user (all flows, importer refused the bad-row file and imported the good one), WebKit journey test 7/7 (`bash scripts/e2e.sh`), CI green on PR 2. Open: the client's real Excel file (SPEC done criterion; only `COLUMN_ALIASES` in `app/services/importer.py` should need to change). Details: `docs/M2-NOTES.md`.
+Next: merge PR 2 (after your review), then M3 (not started).
