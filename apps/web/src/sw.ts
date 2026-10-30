@@ -12,9 +12,14 @@ import { clientsClaim } from 'workbox-core'
 declare const self: {
   __WB_MANIFEST: Array<string | { url: string; revision: string | null }>
   skipWaiting(): void
+  addEventListener(type: 'message', listener: (event: { data?: { type?: string } }) => void): void
 }
 
-self.skipWaiting()
+// A new version waits until the rep taps "update" (or the app is closed and opened again): it must
+// never take over in the middle of a cart or a checkout (SPEC section 8).
+self.addEventListener('message', (event) => {
+  if (event.data?.type === 'SKIP_WAITING') self.skipWaiting()
+})
 clientsClaim()
 
 // App shell: hashed build output, precached so the app opens offline from a cold start.

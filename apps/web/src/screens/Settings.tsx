@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
+import { useImages, redownloadAllImages, refreshImageProgress } from '../lib/sync/images'
 import { Link } from 'react-router'
-import { ar } from '../i18n/ar'
-import { useAuth } from '../store'
+import { ar, fill } from '../i18n/ar'
+import { PENDING_COMMANDS, useAuth } from '../store'
 import { SetPin } from './SetPin'
 
 const button = 'min-h-12 rounded-xl border-2 border-navy/30 bg-white px-4 font-bold'
@@ -12,16 +13,23 @@ export default function Settings() {
   const [changingPin, setChangingPin] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  const images = useImages()
+
   useEffect(() => {
     void navigator.storage?.persisted?.().then(setPersisted, () => setPersisted(false))
+    void refreshImageProgress()
   }, [])
 
   const run = async (action: () => Promise<void>) => {
     setError(null)
     try {
       await action()
-    } catch {
-      setError(ar.settings.logoutFailed)
+    } catch (e) {
+      setError(
+        e instanceof Error && e.message === PENDING_COMMANDS
+          ? ar.settings.logoutPending
+          : ar.settings.logoutFailed,
+      )
     }
   }
 
@@ -42,6 +50,15 @@ export default function Settings() {
             {persisted ? ar.settings.storageOn : ar.settings.storageOff}
           </dd>
         </div>
+        <div className="flex justify-between gap-4">
+          <dt className="font-bold">{ar.settings.images}</dt>
+          <dd>
+            <bdi>
+              {fill(ar.settings.imagesProgress, { cached: images.cached, total: images.total })}
+            </bdi>
+            {images.running && ` · ${ar.settings.imagesRunning}`}
+          </dd>
+        </div>
       </dl>
       {error && (
         <p role="alert" className="mb-4 font-bold text-red-700">
@@ -50,6 +67,17 @@ export default function Settings() {
         </p>
       )}
       <div className="grid gap-3">
+        <Link to="/sync" className={`${button} flex items-center`}>
+          {ar.settings.sync}
+        </Link>
+        <button
+          type="button"
+          className={button}
+          disabled={images.running}
+          onClick={() => void redownloadAllImages()}
+        >
+          {ar.settings.redownload}
+        </button>
         <Link to="/settings/categories" className={`${button} flex items-center`}>
           {ar.settings.categories}
         </Link>

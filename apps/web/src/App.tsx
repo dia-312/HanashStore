@@ -1,6 +1,7 @@
 import { Suspense, lazy, useEffect } from 'react'
 import { BrowserRouter, Route, Routes } from 'react-router'
 import { ar } from './i18n/ar'
+import { startSyncLoop } from './lib/sync/engine'
 import { Catalog } from './screens/Catalog'
 import { EmptyPage } from './screens/EmptyPage'
 import { Lock } from './screens/Lock'
@@ -17,6 +18,7 @@ const ProductPage = lazy(() => import('./screens/product/ProductPage'))
 const Stock = lazy(() => import('./screens/stock/Stock'))
 const Categories = lazy(() => import('./screens/settings/Categories'))
 const ImportProducts = lazy(() => import('./screens/settings/ImportProducts'))
+const SyncScreen = lazy(() => import('./screens/Sync'))
 
 const pages = [
   { path: 'customers', ...ar.empty.customers },
@@ -31,7 +33,11 @@ const lazyPage = (page: React.ReactNode) => (
 export function App() {
   const status = useAuth((s) => s.status)
   const boot = useAuth((s) => s.boot)
+  const signedIn = useAuth((s) => s.identity !== null)
   useAutoLock()
+
+  // Sync runs whenever this device is signed in, also behind the lock screen.
+  useEffect(() => (signedIn ? startSyncLoop() : undefined), [signedIn])
 
   useEffect(() => {
     void boot()
@@ -58,6 +64,7 @@ export function App() {
               <Route path="catalog" element={<Catalog />} />
               <Route path="catalog/:productId" element={lazyPage(<ProductPage />)} />
               <Route path="stock" element={lazyPage(<Stock />)} />
+              <Route path="sync" element={lazyPage(<SyncScreen />)} />
               <Route path="settings" element={lazyPage(<Settings />)} />
               <Route path="settings/categories" element={lazyPage(<Categories />)} />
               <Route path="settings/import" element={lazyPage(<ImportProducts />)} />

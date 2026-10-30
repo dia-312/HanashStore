@@ -7,6 +7,7 @@ import { catalogApi, type ImportReport, type RowIssue } from '../../lib/catalogA
 import { describeError } from '../../lib/errors'
 import { formatMoney } from '../../lib/money'
 import { useOnline } from '../../lib/online'
+import { syncNow } from '../../lib/sync/engine'
 
 const FIELDS = ar.importer.fields as Record<string, string>
 const CODES = ar.importer.codes as Record<string, string>
@@ -75,6 +76,7 @@ export default function ImportProducts() {
     setError(null)
     try {
       setDone(await catalogApi.importProducts(file, false))
+      void syncNow() // bring the imported products onto this device
     } catch (e) {
       if (e instanceof ApiError && e.code === 'IMPORT_HAS_ERRORS')
         setReport(e.details as unknown as ImportReport)

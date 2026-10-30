@@ -1,27 +1,28 @@
 import { useEffect, useState } from 'react'
-import { ErrorNotice } from '../../components/Notices'
 import { StatusBadge } from '../../components/StatusBadge'
 import { Thumb } from '../../components/Thumb'
 import { ar } from '../../i18n/ar'
-import { catalogApi, type VariantListItem } from '../../lib/catalogApi'
-import { usePagedList } from '../../lib/usePagedList'
+import type { VariantListItem } from '../../lib/catalogApi'
+import { buildVariantList, loadSnapshot } from '../../lib/localCatalog'
+import { useLive } from '../../lib/useLive'
 
 export function variantLabel(v: Pick<VariantListItem, 'product_name' | 'color' | 'size'>): string {
   const detail = [v.color, v.size].filter(Boolean).join(' · ')
   return detail ? `${v.product_name} — ${detail}` : v.product_name
 }
 
+const PAGE = 20
+
 function Results({ q, onPick }: { q: string; onPick: (v: VariantListItem) => void }) {
-  const list = usePagedList<VariantListItem>((cursor) =>
-    catalogApi.variants({ q, cursor, limit: 20 }),
-  )
-  if (list.loading && list.items.length === 0) return <p aria-busy="true">{ar.common.loading}</p>
-  if (list.failed && list.items.length === 0)
-    return <ErrorNotice message={ar.catalog.loadFailed} onRetry={list.retry} />
-  if (list.items.length === 0) return <p className="opacity-70">{ar.stock.nothingFound}</p>
+  // Read from the device, so picking a variant works without a network.
+  const all = useLive(async () => buildVariantList(await loadSnapshot(), q), [q])
+  const [shown, setShown] = useState(PAGE)
+  if (all === undefined) return <p aria-busy="true">{ar.common.loading}</p>
+  if (all.length === 0) return <p className="opacity-70">{ar.stock.nothingFound}</p>
+  const items = all.slice(0, shown)
   return (
     <ul className="grid max-h-96 gap-2 overflow-auto">
-      {list.items.map((v) => (
+      {items.map((v) => (
         <li key={v.id}>
           <button
             type="button"
@@ -41,12 +42,11 @@ function Results({ q, onPick }: { q: string; onPick: (v: VariantListItem) => voi
           </button>
         </li>
       ))}
-      {list.hasMore && (
+      {all.length > shown && (
         <li>
           <button
             type="button"
-            disabled={list.loading}
-            onClick={list.loadMore}
+            onClick={() => setShown((n) => n + PAGE)}
             className="min-h-11 w-full rounded-xl border-2 border-navy/30 font-bold"
           >
             {ar.catalog.loadMore}

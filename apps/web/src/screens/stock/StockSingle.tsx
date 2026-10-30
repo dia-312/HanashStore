@@ -3,8 +3,9 @@ import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { ErrorNotice } from '../../components/Notices'
 import { StatusBadge } from '../../components/StatusBadge'
 import { ar, fill } from '../../i18n/ar'
-import { catalogApi, type StockResult, type VariantListItem } from '../../lib/catalogApi'
+import type { VariantListItem } from '../../lib/catalogApi'
 import { describeError } from '../../lib/errors'
+import { queueCount, queueDamage, type LocalStockResult } from '../../lib/sync/stockCommands'
 import { uuid7 } from '../../lib/uuid7'
 import { Result } from './StockIn'
 import { VariantPicker, variantLabel } from './VariantPicker'
@@ -48,8 +49,8 @@ function Picked({ variant, onClear }: { variant: VariantListItem; onClear: () =>
 function useAction() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<StockResult | null>(null)
-  const run = async (action: () => Promise<StockResult>) => {
+  const [result, setResult] = useState<LocalStockResult | null>(null)
+  const run = async (action: () => Promise<LocalStockResult>) => {
     setBusy(true)
     setError(null)
     try {
@@ -142,10 +143,11 @@ export function StockCount({ onAgain }: { onAgain: () => void }) {
           onCancel={() => setReviewing(false)}
           onConfirm={() =>
             action.run(() =>
-              catalogApi.stockAdjust({
-                id: requestId,
-                variant_id: variant.id,
-                counted_qty: value,
+              queueCount({
+                movementId: requestId,
+                variantId: variant.id,
+                counted: value,
+                expected: variant.stock_qty,
                 note: note.trim(),
               }),
             )
@@ -226,9 +228,9 @@ export function StockDamage({ onAgain }: { onAgain: () => void }) {
           onCancel={() => setReviewing(false)}
           onConfirm={() =>
             action.run(() =>
-              catalogApi.stockDamage({
-                id: requestId,
-                variant_id: variant.id,
+              queueDamage({
+                movementId: requestId,
+                variantId: variant.id,
                 qty: value,
                 note: note.trim(),
               }),

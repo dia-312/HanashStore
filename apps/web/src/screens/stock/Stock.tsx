@@ -1,7 +1,5 @@
 import { useState } from 'react'
-import { OfflineNotice } from '../../components/Notices'
 import { ar } from '../../i18n/ar'
-import { useOnline } from '../../lib/online'
 import { StockIn } from './StockIn'
 import { StockCount, StockDamage } from './StockSingle'
 
@@ -14,7 +12,6 @@ const tabs: { id: Tab; label: string }[] = [
 ]
 
 export default function Stock() {
-  const online = useOnline()
   const [tab, setTab] = useState<Tab>('in')
   // Bumping the round remounts the active form, so "new movement" starts from a clean screen.
   const [round, setRound] = useState(0)
@@ -42,15 +39,11 @@ export default function Stock() {
           </button>
         ))}
       </div>
-      {!online ? (
-        <OfflineNotice />
-      ) : (
-        <div role="tabpanel">
-          {tab === 'in' && <StockIn key={round} onAgain={again} />}
-          {tab === 'count' && <StockCount key={round} onAgain={again} />}
-          {tab === 'damage' && <StockDamage key={round} onAgain={again} />}
-        </div>
-      )}
+      <div role="tabpanel">
+        {tab === 'in' && <StockIn key={round} onAgain={again} />}
+        {tab === 'count' && <StockCount key={round} onAgain={again} />}
+        {tab === 'damage' && <StockDamage key={round} onAgain={again} />}
+      </div>
     </section>
   )
 }

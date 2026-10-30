@@ -11,8 +11,8 @@ export default defineConfig({
       strategies: 'injectManifest',
       srcDir: 'src',
       filename: 'sw.ts',
-      // The new version waits until the app is reloaded; the update prompt comes in M3 (SPEC section 8).
-      registerType: 'autoUpdate',
+      // A new version waits; the app shows "update available" and applies it when the rep agrees.
+      registerType: 'prompt',
       injectManifest: {
         globPatterns: ['**/*.{js,css,html,woff2,png,svg}'],
         globIgnores: ['media/**'],

@@ -6,6 +6,7 @@ import { ar, fill } from '../../i18n/ar'
 import { catalogApi, type Category } from '../../lib/catalogApi'
 import { describeError } from '../../lib/errors'
 import { useOnline } from '../../lib/online'
+import { syncNow } from '../../lib/sync/engine'
 
 const input = 'min-h-12 rounded-xl border-2 border-navy/30 bg-white px-3'
 const small = 'min-h-11 rounded-xl border-2 border-navy/30 bg-white px-4 font-bold'
@@ -86,6 +87,7 @@ export default function Categories() {
 
   const reload = useCallback(async () => {
     setCategories(await catalogApi.categories(showInactive))
+    void syncNow() // category names and visibility are also kept on the device
   }, [showInactive])
 
   useEffect(() => {

@@ -3,6 +3,8 @@ import { getMeta, removeMeta, setMeta, wipeLocalData } from './db'
 import { ApiError, api, getClockSkewMs } from './lib/api'
 import { type PinAttempts, freshAttempts, recordWrongPin, remainingLockMs } from './lib/lock'
 import { type PinRecord, createPinRecord, verifyPin } from './lib/pin'
+import { setSyncHooks } from './lib/sync/engine'
+import { pendingCount } from './lib/sync/outbox'
 
 export type Status = 'booting' | 'loggedOut' | 'needsPin' | 'locked' | 'unlocked'
 export type UnlockResult = 'ok' | 'wrong' | 'locked' | 'password'
@@ -32,10 +34,15 @@ interface AuthState {
   lock: () => void
   logout: () => Promise<void>
   logoutAll: () => Promise<void>
+  /** The server revoked this device: wipe everything and go back to the login screen. */
+  deviceRevoked: () => Promise<void>
 }
 
 const CLOCK_SKEW_LIMIT_MS = 5 * 60_000
 const KEYS = { identity: 'identity', pin: 'pin', attempts: 'attempts' } as const
+
+/** Raised by logout while commands wait in the outbox: leaving now would throw them away. */
+export const PENDING_COMMANDS = 'PENDING_COMMANDS'
 
 export const deviceName = () => (/iPad|Macintosh/.test(navigator.userAgent) ? 'iPad' : 'Browser')
 
@@ -76,10 +83,9 @@ export const useAuth = create<AuthState>()((set, get) => {
     } catch (e) {
       if (!(e instanceof ApiError)) return
       if (e.code === 'DEVICE_REVOKED') {
-        await wipeLocalData()
-        reset()
+        await get().deviceRevoked()
       } else if (e.code === 'UNAUTHENTICATED') {
-        set({ sessionExpired: true }) // never wipes: the outbox (M3) must survive an expired session
+        set({ sessionExpired: true }) // never wipes: the outbox must survive an expired session
       }
     }
   }
@@ -161,18 +167,30 @@ export const useAuth = create<AuthState>()((set, get) => {
     },
 
     logout: async () => {
-      // M3: refuse while the outbox has pending commands (SPEC F1).
+      // Refuse while the outbox has pending commands: the wipe below would lose them (SPEC F1).
+      if ((await pendingCount()) > 0) throw new Error(PENDING_COMMANDS)
       await api('/auth/logout', { method: 'POST' })
       await wipeLocalData()
       reset()
     },
 
     logoutAll: async () => {
+      if ((await pendingCount()) > 0) throw new Error(PENDING_COMMANDS)
       await api('/auth/logout-all', { method: 'POST' })
       await wipeLocalData()
       reset()
     },
+
+    deviceRevoked: async () => {
+      await wipeLocalData()
+      reset()
+    },
   }
+})
+
+setSyncHooks({
+  onSessionExpired: () => useAuth.setState({ sessionExpired: true }),
+  onDeviceRevoked: () => void useAuth.getState().deviceRevoked(),
 })
 
 /** Test helper: forget in-memory state without touching IndexedDB. */
