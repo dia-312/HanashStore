@@ -1,6 +1,6 @@
 # M1 — Foundation: notes
 
-Branch `m1-foundation` (from `main`). **Status: built; checked on the PC and on the iPad. CI run still open.**
+Branch `m1-foundation` (from `main`). **Status: done. Checked on the PC and the iPad; CI green on PR 1.**
 Done when (SPEC section 15): login works on the iPad over HTTPS, and CI is green.
 
 ## What exists
@@ -33,13 +33,13 @@ Done when (SPEC section 15): login works on the iPad over HTTPS, and CI is green
 | iPad, Home Screen app, HTTPS (reported by the user) | login, PIN setup, manual lock, wrong PIN, airplane-mode cold start to the Lock screen, offline PIN unlock: all passed |
 | iPad cold start to PIN screen | "good" (user's judgement, not measured in ms; budget 1.5 s) |
 | iPad `storage.persist()` | granted ("مفعّل" in Settings) |
+| CI (PR 1, head 7cc0a41) | web, api and compose-smoke all pass. The first run failed in `api`: bare `pytest` could not import `app`; fixed with `pythonpath` in `pyproject.toml` |
 | Server side after the iPad login | one device "iPad" (not revoked), PIN hash stored, one active session |
 
 Bugs the tests caught while building: devices were inserted after sessions (no `relationship()`, fixed with a flush); the PIN pattern `\d` accepted Arabic-Indic digits in Python (now `[0-9]`); a datetime in the 409 body was not JSON-serializable; the CLI printed a user after its session closed.
 
 ## Not verified
 - **Cold start time in milliseconds** on the iPad: only a judgement of "good" was reported, not a number.
-- **CI**: the workflow has not run (nothing is pushed). The `compose-smoke` job in particular is untested.
 - **Service worker offline start** cannot be proven in the built-in browser (it refuses service workers); same limit as M0.
 - **Playwright smoke test** from the plan is not done: it needs a browser download (about 150 MB, no Chrome installed here) that has not been approved. The same flow was exercised by hand in the built-in browser.
 - Password change has an API and tests but no screen yet.
