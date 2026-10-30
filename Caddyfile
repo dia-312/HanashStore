@@ -1,0 +1,38 @@
+{
+	# TLS is terminated in front of this container (Cloudflare tunnel in development).
+	auto_https off
+	servers {
+		# Keep the client IP that cloudflared / a proxy forwards, so the login rate limit sees it.
+		trusted_proxies static private_ranges
+	}
+}
+
+:8080 {
+	encode zstd gzip
+
+	handle /api/* {
+		reverse_proxy api:8000
+	}
+
+	# Product images arrive in M2; the path is reserved now.
+	handle /media/* {
+		respond "not found" 404
+	}
+
+	handle {
+		root * /srv
+		# Hashed build files and fonts never change under the same URL.
+		@immutable path /assets/* /fonts/*
+		header @immutable Cache-Control "public, max-age=31536000, immutable"
+		# The service worker and the HTML shell must always be revalidated.
+		@shell path /sw.js /index.html /registerSW.js /manifest.webmanifest /
+		header @shell Cache-Control "no-cache"
+		try_files {path} /index.html
+		file_server
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options nosniff
+	}
+}
