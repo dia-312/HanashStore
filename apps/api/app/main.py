@@ -8,7 +8,7 @@ from app import clock
 from app.db import get_engine
 from app.errors import error_response, install_error_handlers
 from app.ratelimit import LoginLimiter
-from app.routers import auth, devices
+from app.routers import auth, categories, devices, products, stock, variants
 
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
@@ -45,6 +45,8 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(devices.router, prefix="/api/v1")
+    for module in (categories, products, variants, stock):
+        app.include_router(module.router, prefix="/api/v1")
     return app
 
 
