@@ -23,9 +23,8 @@ V1 = "/api/v1"
         ("GET", "/variants"),
         ("PATCH", f"/variants/{uuid.uuid4()}"),
         ("GET", f"/variants/{uuid.uuid4()}/movements"),
-        ("POST", "/stock/in"),
-        ("POST", "/stock/adjust"),
-        ("POST", "/stock/damage"),
+        ("GET", "/sync/pull"),
+        ("POST", "/sync/push"),
     ],
 )
 def test_every_catalog_route_needs_a_session(method: str, path: str) -> None:

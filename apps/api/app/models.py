@@ -176,3 +176,19 @@ class AuditLog(Base):
     after: Mapped[Any | None] = mapped_column(JSONB)
     device_id: Mapped[uuid.UUID | None] = mapped_column(Uuid)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ProcessedCommand(Base):
+    """A pushed command kept with its result, so a resend changes nothing (SPEC section 8)."""
+
+    __tablename__ = "processed_commands"
+    __table_args__ = (
+        CheckConstraint("status in ('applied','rejected')", name="processed_status_known"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)  # the client's command id
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"), nullable=False)
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    result: Mapped[Any | None] = mapped_column(JSONB)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)

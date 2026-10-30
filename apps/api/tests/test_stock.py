@@ -25,23 +25,9 @@ def _qty(api: TestClient, variant_id: str) -> int:
     return int(next(i["stock_qty"] for i in detail if i["id"] == variant_id))
 
 
-def _adjust(api: TestClient, variant_id: str, counted: int, note: str = "count") -> Any:
-    return api.post(
-        V1 + "/stock/adjust",
-        json={
-            "id": str(uuid.uuid4()),
-            "variant_id": variant_id,
-            "counted_qty": counted,
-            "note": note,
-        },
-    )
-
-
-def _damage(api: TestClient, variant_id: str, qty: int, note: str = "dropped") -> Any:
-    return api.post(
-        V1 + "/stock/damage",
-        json={"id": str(uuid.uuid4()), "variant_id": variant_id, "qty": qty, "note": note},
-    )
+def _code(result: dict[str, Any]) -> str:
+    assert result["status"] == "rejected", result
+    return str(result["error"]["code"])
 
 
 def test_opening_quantity_creates_an_opening_movement(api: TestClient) -> None:
@@ -52,35 +38,39 @@ def test_opening_quantity_creates_an_opening_movement(api: TestClient) -> None:
 
 def test_stock_in_adds_and_reports_the_new_quantities(api: TestClient) -> None:
     a, b = _variant(api, opening_qty=5), _variant(api, opening_qty=0)
-    r = api.post(
-        V1 + "/stock/in",
-        json={
-            "note": "مورد 1",
-            "items": [
-                {"id": str(uuid.uuid4()), "variant_id": a, "qty": 10},
-                {"id": str(uuid.uuid4()), "variant_id": b, "qty": 3},
-            ],
-        },
-    )
-    assert r.status_code == 200
-    assert r.json()["applied"] == 2
-    assert {v["id"]: v["stock_qty"] for v in r.json()["variants"]} == {a: 15, b: 3}
+    result = helpers.push_one(api, helpers.purchase_cmd([(a, 10), (b, 3)], "مورد 1"))
+    assert result["status"] == "applied"
+    assert result["data"]["applied"] == 2
+    assert {v["id"]: v["stock_qty"] for v in result["data"]["variants"]} == {a: 15, b: 3}
+    assert _qty(api, a) == 15
 
 
-def test_sending_the_same_movement_id_twice_applies_it_once(api: TestClient) -> None:
+def test_sending_the_same_command_twice_applies_it_once(api: TestClient) -> None:
     v = _variant(api)
-    body = {"items": [{"id": str(uuid.uuid4()), "variant_id": v, "qty": 4}]}
-    first, second = api.post(V1 + "/stock/in", json=body), api.post(V1 + "/stock/in", json=body)
-    assert (first.json()["applied"], second.json()["applied"]) == (1, 0)
+    cmd = helpers.purchase_cmd([(v, 4)])
+    first, second = helpers.push_one(api, cmd), helpers.push_one(api, cmd)
+    assert first["status"] == second["status"] == "applied"
+    assert first == second  # the stored result comes back unchanged
     assert _qty(api, v) == 4
-    # Reusing the id for something different is an error, not a silent overwrite.
-    clash = {"items": [{**body["items"][0], "qty": 9}]}
-    assert api.post(V1 + "/stock/in", json=clash).json()["code"] == "MOVEMENT_ID_CONFLICT"
+
+
+def test_reusing_a_movement_id_for_something_different_is_refused(api: TestClient) -> None:
+    v = _variant(api)
+    movement_id = str(uuid.uuid4())
+    one = {"movement_id": movement_id, "variant_id": v, "qty": 4}
+    assert (
+        helpers.push_one(api, helpers.command("stock.purchase", {"items": [one]}))["status"]
+        == "applied"
+    )
+    clash = {**one, "qty": 9}
+    result = helpers.push_one(api, helpers.command("stock.purchase", {"items": [clash]}))
+    assert _code(result) == "MOVEMENT_ID_CONFLICT"
+    assert _qty(api, v) == 4
 
 
 def test_adjustment_records_the_difference_and_needs_a_reason(api: TestClient) -> None:
     v = _variant(api, opening_qty=10)
-    assert _adjust(api, v, 7).status_code == 200
+    assert helpers.adjust(api, v, 7)["status"] == "applied"
     assert _qty(api, v) == 7
     movements = api.get(f"{V1}/variants/{v}/movements").json()["items"]
     assert (movements[0]["type"], movements[0]["qty"], movements[0]["running_total"]) == (
@@ -88,51 +78,55 @@ def test_adjustment_records_the_difference_and_needs_a_reason(api: TestClient) -
         -3,
         7,
     )
-    assert _adjust(api, v, 12).status_code == 200  # a count above the system is positive
+    assert helpers.adjust(api, v, 12)["status"] == "applied"  # above the system: positive
     assert _qty(api, v) == 12
-    no_note = api.post(
-        V1 + "/stock/adjust",
-        json={"id": str(uuid.uuid4()), "variant_id": v, "counted_qty": 1, "note": "  "},
-    )
-    assert no_note.status_code == 422
-    same = _adjust(api, v, 12)
-    assert same.status_code == 409 and same.json()["code"] == "NO_DIFFERENCE"
+    assert _code(helpers.adjust(api, v, 1, note="  ")) == "VALIDATION_ERROR"
+
+
+def test_a_count_equal_to_the_system_is_a_harmless_no_op(api: TestClient) -> None:
+    v = _variant(api, opening_qty=12)
+    result = helpers.adjust(api, v, 12)
+    assert result["status"] == "applied" and result["data"]["applied"] == 0
+    assert [w["code"] for w in result["warnings"]] == ["NO_DIFFERENCE"]
+
+
+def test_adjustment_warns_when_the_device_saw_another_quantity(api: TestClient) -> None:
+    v = _variant(api, opening_qty=10)
+    result = helpers.adjust(api, v, 4, expected=8)
+    assert result["status"] == "applied"
+    assert result["warnings"] == [{"code": "STOCK_DIFFERS", "expected": 8, "actual": 10}]
+    assert _qty(api, v) == 4  # the counted quantity wins
 
 
 def test_repeating_an_adjustment_does_not_apply_it_twice(api: TestClient) -> None:
     v = _variant(api, opening_qty=10)
-    body = {"id": str(uuid.uuid4()), "variant_id": v, "counted_qty": 4, "note": "جرد"}
-    assert api.post(V1 + "/stock/adjust", json=body).json()["applied"] == 1
-    assert api.post(V1 + "/stock/adjust", json=body).json()["applied"] == 0
+    payload = {"movement_id": str(uuid.uuid4()), "variant_id": v, "counted_qty": 4, "note": "جرد"}
+    cmd = helpers.command("stock.adjust", payload)
+    helpers.push_one(api, cmd)
+    helpers.push_one(api, cmd)
+    # Even with a fresh command id the same movement id is not applied again.
+    again = helpers.push_one(api, helpers.command("stock.adjust", payload))
+    assert again["status"] == "applied" and again["data"]["applied"] == 0
     assert _qty(api, v) == 4
 
 
 def test_damage_removes_stock_and_cannot_go_below_zero(api: TestClient) -> None:
     v = _variant(api, opening_qty=5)
-    assert _damage(api, v, 2).status_code == 200
+    assert helpers.damage(api, v, 2)["status"] == "applied"
     assert _qty(api, v) == 3
-    r = _damage(api, v, 4)
-    assert r.status_code == 409
-    assert r.json()["code"] == "INSUFFICIENT_STOCK"
-    assert r.json()["details"]["available"] == 3
+    rejected = helpers.damage(api, v, 4)
+    assert _code(rejected) == "INSUFFICIENT_STOCK"
+    assert rejected["error"]["details"]["available"] == 3
     assert _qty(api, v) == 3
-    assert _adjust(api, v, 0).status_code == 200  # counting zero is fine
-    assert _damage(api, v, 1).status_code == 409
+    assert helpers.adjust(api, v, 0)["status"] == "applied"  # counting zero is fine
+    assert _code(helpers.damage(api, v, 1)) == "INSUFFICIENT_STOCK"
 
 
-def test_a_failed_batch_changes_nothing(api: TestClient, db: Session) -> None:
+def test_a_failed_command_changes_nothing(api: TestClient, db: Session) -> None:
     good = _variant(api, opening_qty=1)
-    bad = str(uuid.uuid4())  # no such variant
-    r = api.post(
-        V1 + "/stock/in",
-        json={
-            "items": [
-                {"id": str(uuid.uuid4()), "variant_id": good, "qty": 5},
-                {"id": str(uuid.uuid4()), "variant_id": bad, "qty": 5},
-            ]
-        },
-    )
-    assert r.status_code == 404
+    missing = str(uuid.uuid4())  # no such variant
+    result = helpers.push_one(api, helpers.purchase_cmd([(good, 5), (missing, 5)]))
+    assert _code(result) == "VARIANT_NOT_FOUND"
     assert _qty(api, good) == 1
     assert db.scalar(select(func.count()).select_from(StockMovement)) == 1
 
@@ -140,24 +134,21 @@ def test_a_failed_batch_changes_nothing(api: TestClient, db: Session) -> None:
 @pytest.mark.parametrize("qty", [0, -1, 100_001])
 def test_quantities_are_bounded(api: TestClient, qty: int) -> None:
     v = _variant(api)
-    r = api.post(
-        V1 + "/stock/in", json={"items": [{"id": str(uuid.uuid4()), "variant_id": v, "qty": qty}]}
-    )
-    assert r.status_code == 422
+    result = helpers.push_one(api, helpers.purchase_cmd([(v, qty)]))
+    assert _code(result) == "VALIDATION_ERROR"
 
 
 def test_purchase_into_a_deactivated_variant_is_refused(api: TestClient) -> None:
     v = _variant(api)
     api.patch(f"{V1}/variants/{v}", json={"is_active": False})
-    r = helpers.stock_in(api, v, 1)
-    assert r.status_code == 409 and r.json()["code"] == "VARIANT_INACTIVE"
+    assert _code(helpers.stock_in(api, v, 1)) == "VARIANT_INACTIVE"
 
 
 def test_history_has_a_running_total_and_pages_newest_first(api: TestClient) -> None:
     v = _variant(api, opening_qty=10)
     helpers.stock_in(api, v, 5)
-    _damage(api, v, 3)
-    _adjust(api, v, 20)  # +8
+    helpers.damage(api, v, 3)
+    helpers.adjust(api, v, 20)  # +8
     page1 = api.get(f"{V1}/variants/{v}/movements", params={"limit": 2}).json()
     assert [(m["type"], m["qty"], m["running_total"]) for m in page1["items"]] == [
         ("adjustment", 8, 20),
@@ -177,8 +168,8 @@ def test_stock_cache_always_equals_the_sum_of_movements(api: TestClient, db: Ses
     variants = [_variant(api, opening_qty=n) for n in (0, 3, 50)]
     for v in variants:
         helpers.stock_in(api, v, 7)
-        _damage(api, v, 2)
-        _adjust(api, v, 11)
+        helpers.damage(api, v, 2)
+        helpers.adjust(api, v, 11)
     assert stock_mismatches(db) == []
     total = db.scalar(select(func.sum(StockMovement.qty)))
     assert total == db.scalar(select(func.sum(ProductVariant.stock_qty)))
@@ -200,9 +191,8 @@ def test_recompute_stock_reports_and_fixes_a_broken_cache(
     assert db.get(ProductVariant, uuid.UUID(v)).stock_qty == 9  # type: ignore[union-attr]
 
 
-def test_concurrent_looking_requests_cannot_oversell(api: TestClient) -> None:
-    # Two damage requests that together exceed stock: the second must be refused.
+def test_two_damage_commands_that_together_exceed_stock_cannot_oversell(api: TestClient) -> None:
     v = _variant(api, opening_qty=5)
-    assert _damage(api, v, 3).status_code == 200
-    assert _damage(api, v, 3).status_code == 409
+    assert helpers.damage(api, v, 3)["status"] == "applied"
+    assert _code(helpers.damage(api, v, 3)) == "INSUFFICIENT_STOCK"
     assert _qty(api, v) == 2
