@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { ar } from '../i18n/ar'
+import { useOnline } from '../lib/online'
 import { useAuth } from '../store'
 
 const NAV = [
@@ -16,20 +16,6 @@ const NAV = [
 const isStandalone = () =>
   window.matchMedia('(display-mode: standalone)').matches ||
   (navigator as Navigator & { standalone?: boolean }).standalone === true
-
-function useOnline() {
-  const [online, setOnline] = useState(navigator.onLine)
-  useEffect(() => {
-    const update = () => setOnline(navigator.onLine)
-    window.addEventListener('online', update)
-    window.addEventListener('offline', update)
-    return () => {
-      window.removeEventListener('online', update)
-      window.removeEventListener('offline', update)
-    }
-  }, [])
-  return online
-}
 
 function Banner({ children }: { children: string }) {
   return (
