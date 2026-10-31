@@ -62,4 +62,6 @@ Carry into M1: keep "prepare, then share" (two taps) as the primary iOS share fl
 M1 (Foundation) built; checked on the real iPad over HTTPS as a Home Screen app (login, PIN setup, manual lock, wrong PIN, airplane-mode cold start to the Lock screen with offline PIN unlock, cold start to PIN screen within budget, persistent storage granted). Initial JS 149 KB gzip (budget 250). CI green on PR 1 (web, api, compose-smoke). Details: `docs/M1-NOTES.md`.
 PR 1 merged.
 M2 (Catalog and stock) built; tried on the real iPad by the user (all flows, importer refused the bad-row file and imported the good one), WebKit journey test 7/7 (`bash scripts/e2e.sh`), CI green on PR 2. Open: the client's real Excel file (SPEC done criterion; only `COLUMN_ALIASES` in `app/services/importer.py` should need to change). Details: `docs/M2-NOTES.md`.
-Next: merge PR 2 (after your review), then M3 (not started).
+PR 2 merged.
+M3 (Offline engine) built; tried on the real iPad by the user (fast catalog, offline stock-in and damage, reconnect synced, over-stock damage blocked, all images on the device), WebKit journey 12/12, CI green on PR 3. Open gaps are listed in `docs/M3-NOTES.md` ("Known gaps"): fix them before or alongside M4 as the user decides.
+Next: merge PR 3 (after your review), then M4 (not started).

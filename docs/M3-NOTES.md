@@ -1,6 +1,6 @@
 # M3 — Offline engine: notes
 
-Branch `m3-offline-engine` (from `main`). **Status: built and checked on the PC (tests, WebKit browser journey including offline). Not yet tried on the real iPad.**
+Branch `m3-offline-engine` (from `main`). **Status: built, checked on the PC (tests, WebKit browser journey including offline), and tried on the real iPad by the user (see below). CI green on PR 3.**
 Done when (SPEC section 15): a stock-in entered offline appears on the server after reconnecting, and the same command sent twice applies once. Both are covered by the browser journey (`bash scripts/e2e.sh`) and by API tests.
 
 ## What exists
@@ -27,11 +27,25 @@ Done when (SPEC section 15): a stock-in entered offline appears on the server af
 | Large dataset (400 products, 2,000 variants), `bash scripts/e2e.sh seed` | first page of the catalog on screen about 0.3 s after opening it; reopening from the device about 0.3 s; all 2,805 rows end up on the device |
 | API timing, same dataset, through Caddy | first pull of everything (2,805 rows in one page): 408 ms; pull with nothing new: p50 35 ms, p95 55 ms; push of 50 commands: median 580 ms, max about 1.1 s (budget 3 s) |
 
+## Tried on the real iPad (by the user, 2026-11-01)
+- The catalog opens and scrolls fast; the first sync took almost no time (no figures recorded).
+- Stock-in and damage entered offline: the new numbers showed at once and the header said commands were waiting.
+- Network back: it sent by itself and showed "synced".
+- A damage larger than the stock is not accepted.
+- All product images are on the device (Settings counter).
+
+## Known gaps (saved to fix later)
+1. **Server-side changes reach the device late.** A quantity or price changed on the server (a command from another path, an online edit) shows on the device only at the next sync: about 60 s, or when the app returns to the front. Idea: also pull when a stock or product screen opens.
+2. **Online-only edits.** Product, variant and category edits, photos, import and movement history need internet (SPEC section 8 says so). Idea: price and alert-level edits as commands later, and show waiting stock commands in the movement history.
+3. **Not tried on the iPad:** the update banner after a redeploy, closing and reopening the app offline with commands waiting, and a command the server itself refuses (the device blocks that case up front; the refusal path is only covered by the WebKit journey and the API tests).
+4. **No iPad figures:** first sync time and catalog reopen time were "fast" but not measured; the budgets (reopen < 300 ms) are unmeasured on the device.
+5. **The WebKit journey is not in CI.**
+6. **Search is still the basic word match** on the product's text (real search with synonyms and typo tolerance is M8).
+7. **First pull of a big write is one page** (the seed or a 5,000-row import): fine at the measured size (408 ms, 760 KB for 2,805 rows) but not split by size.
+
 ## Not verified
-- **iPad, Home Screen app**: first sync time on the real device, reopening the catalog (< 300 ms), airplane-mode stock-in then reconnect, closing and reopening the app with commands waiting, image download progress and offline images, the update banner after a redeploy, the sync screen with a refused command.
-- Headless WebKit on a PC writes browser storage about 15 ms per row, roughly a minute for the 2,805-row first sync; an iPad should be much faster, but the real number is unknown.
-- Images are fetched but presentation mode (M8) is what shows them offline; offline display of product photos on the product page was not checked in the browser.
-- CI on this branch (the WebKit journey is not part of CI).
+- Offline display of product photos on the product page was not checked in the browser (the iPad check confirmed the files are on the device).
+- Headless WebKit on a PC writes browser storage about 15 ms per row, roughly a minute for the 2,805-row first sync; the iPad was far faster.
 
 ## Decisions and deviations
 - `stock_movements` are not pulled; movement history stays online. The device holds only `stock_qty`.
