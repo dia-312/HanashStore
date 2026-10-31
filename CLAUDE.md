@@ -65,4 +65,7 @@ PR 1 merged.
 M2 (Catalog and stock) built; tried on the real iPad by the user (all flows, importer refused the bad-row file and imported the good one), WebKit journey test 7/7 (`bash scripts/e2e.sh`), CI green on PR 2. Open: the client's real Excel file (SPEC done criterion; only `COLUMN_ALIASES` in `app/services/importer.py` should need to change). Details: `docs/M2-NOTES.md`.
 PR 2 merged.
 M3 (Offline engine) built; tried on the real iPad by the user (fast catalog, offline stock-in and damage, reconnect synced, over-stock damage blocked, all images on the device), WebKit journey 12/12, CI green on PR 3. Open gaps are listed in `docs/M3-NOTES.md` ("Known gaps"): fix them before or alongside M4 as the user decides.
-Next: merge PR 3 (after your review), then M4 (not started).
+PR 3 merged. PR 4 (M3 gap fixes) is open.
+M4 (Customers, presentation mode, checkout, invoices) built; tried on the real iPad by the user (offline customer, presentation mode with pictures, partial payment, sync on reconnect; catalog opens in 42 ms, first sync 977 ms), WebKit journey with the SPEC section 13 flow. PR 5 is open. Details: `docs/M4-NOTES.md`.
+M5 (WhatsApp output) built; tried on the real iPad by the user (business details on the invoice, PDF online, PNG shared in 271 ms, new invoice offline offers only the picture with the reason, statement both ways), WebKit journey 16/16, CI green on PR 6. Details: `docs/M5-NOTES.md`.
+Next: merge PR 4, 5, 6 in order (PR 5 and 6 are stacked on the earlier branch), then M6 (not started).

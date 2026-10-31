@@ -1,7 +1,7 @@
 # M5 — WhatsApp output: notes
 
-Branch `m5-whatsapp` (from `m4-sales`). **Status: built and checked on the PC (tests, WebKit browser journey, PDF rendered in the container). Not pushed, not yet tried on the real iPad with WhatsApp.**
-Done when (SPEC section 15): an invoice and a statement are received correctly on WhatsApp from the iPad, online (PDF) and offline (PNG). The WhatsApp part can only be checked on the device.
+Branch `m5-whatsapp` (from `m4-sales`). **Status: built, checked on the PC (tests, WebKit browser journey, PDF rendered in the container) and tried on the real iPad by the user. PR 6, CI green.**
+Done when (SPEC section 15): an invoice and a statement are received correctly on WhatsApp from the iPad, online (PDF) and offline (PNG). 
 
 ## What exists
 
