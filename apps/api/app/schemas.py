@@ -353,6 +353,8 @@ class PullPage(BaseModel):
     changes: PullChanges
     cursor: int
     has_more: bool
+    # Business settings travel with every pull: a handful of values, always current.
+    settings: dict[str, Any] = {}
 
 
 class RowIssue(BaseModel):

@@ -56,6 +56,7 @@ from app.schemas import (
     SyncVariant,
 )
 from app.services import catalog, customers, invoices, stock
+from app.services import settings as settings_service
 
 PULL_LIMIT = 1000
 # The current command format and the one before it, so a device with old pending commands can
@@ -131,6 +132,7 @@ def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
         ),
         cursor=max(seen, default=cursor),
         has_more=has_more,
+        settings=settings_service.get_all(db),
     )
 
 
