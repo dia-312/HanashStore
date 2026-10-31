@@ -14,6 +14,7 @@ from app.routers import (
     auth,
     categories,
     devices,
+    documents,
     images,
     imports,
     products,
@@ -60,7 +61,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router, prefix="/api/v1")
     app.include_router(devices.router, prefix="/api/v1")
-    for module in (categories, products, variants, images, sync, imports, settings):
+    for module in (categories, products, variants, images, sync, imports, settings, documents):
         app.include_router(module.router, prefix="/api/v1")
     # Caddy serves /media straight from the volume in production; this keeps dev and tests simple.
     app.mount("/media", StaticFiles(directory=storage.media_root(), check_dir=False), name="media")

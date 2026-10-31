@@ -28,6 +28,8 @@ services:
       MEDIA_DIR: /data/media
     volumes:
       - media:/data/media
+      - ./apps/web/public/fonts:/app/fonts:ro # the font the PDF embeds
+      - ./shared:/app/shared:ro # the stylesheet and labels the PDF shares with the app
       - ./apps/api/seed-data:/seed:ro # optional large dataset for the speed check
     depends_on:
       postgres:

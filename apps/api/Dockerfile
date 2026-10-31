@@ -1,5 +1,14 @@
 FROM python:3.12-slim
 
+# Pango and HarfBuzz are what WeasyPrint uses to shape Arabic in the invoice PDF (SPEC section 11).
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
+ && rm -rf /var/lib/apt/lists/*
+
+# The font and the shared stylesheet are mounted by docker-compose from the repo, so the PDF and the
+# app use the very same files.
+ENV FONTS_DIR=/app/fonts SHARED_DIR=/app/shared
+
 WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt

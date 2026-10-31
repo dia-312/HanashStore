@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block title %}{{ doc.number }}{% endblock %}
+{% block content %}
+  <table class="head"><tbody><tr>
+    {% include "_head.html" %}
+    <td class="meta">
+      <div class="title">{{ L.title }}</div>
+      <div><bdi dir="ltr">{{ doc.number }}</bdi></div>
+      <div>{{ L.date }}: <bdi dir="ltr">{{ doc.issued_at }}</bdi></div>
+      {% if doc.cancelled %}
+      <div class="stamp">{{ L.cancelled }}</div>
+      {% if doc.cancel_reason %}<div class="cancel-reason">{{ L.cancelReason }}: {{ doc.cancel_reason }}</div>{% endif %}
+      {% endif %}
+    </td>
+  </tr></tbody></table>
+
+  <div class="cust">
+    <div class="name">{{ doc.customer.name }}{% if doc.customer.shop_name %} — {{ doc.customer.shop_name }}{% endif %}</div>
+    {% if doc.customer.phone %}<div class="muted">{{ L.phone }}: <bdi dir="ltr">{{ doc.customer.phone }}</bdi></div>{% endif %}
+  </div>
+
+  <table class="lines">
+    <thead><tr><th>{{ L.n }}</th><th>{{ L.product }}</th><th>{{ L.variant }}</th><th>{{ L.qty }}</th><th>{{ L.price }}</th><th>{{ L.total }}</th></tr></thead>
+    <tbody>
+    {% for l in doc.lines %}
+      <tr>
+        <td>{{ l.n }}</td>
+        <td>{{ l.product }}</td>
+        <td>{{ l.variant }}</td>
+        <td class="num"><bdi dir="ltr">{{ l.qty }}</bdi></td>
+        <td class="num"><bdi dir="ltr">{{ l.unit_price }}</bdi></td>
+        <td class="num"><bdi dir="ltr">{{ l.line_total }}</bdi></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals"><tbody>
+    <tr><td>{{ L.subtotal }}</td><td><bdi dir="ltr">{{ doc.totals.subtotal }}</bdi></td></tr>
+    {% if doc.totals.discount %}<tr><td>{{ L.discount }}</td><td><bdi dir="ltr">{{ doc.totals.discount }}</bdi></td></tr>{% endif %}
+    <tr class="grand"><td>{{ L.grand }}</td><td><bdi dir="ltr">{{ doc.totals.total }}</bdi></td></tr>
+    <tr><td>{{ L.paid }}</td><td><bdi dir="ltr">{{ doc.totals.paid }}</bdi></td></tr>
+    <tr class="remain"><td>{{ L.remaining }}</td><td><bdi dir="ltr">{{ doc.totals.remaining }}</bdi></td></tr>
+  </tbody></table>
+
+  {% if doc.note %}<div class="note">{{ L.note }}: {{ doc.note }}</div>{% endif %}
+  {% if doc.business.footer %}<div class="footer">{{ doc.business.footer }}</div>{% endif %}
+{% endblock %}

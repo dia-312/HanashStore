@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% block title %}{{ L.title }}{% endblock %}
+{% block content %}
+  <table class="head"><tbody><tr>
+    {% include "_head.html" %}
+    <td class="meta">
+      <div class="title">{{ L.title }}</div>
+      <div>{{ L.period }}: <bdi dir="ltr">{{ doc.period.from }}</bdi> {{ L.to }} <bdi dir="ltr">{{ doc.period.to }}</bdi></div>
+    </td>
+  </tr></tbody></table>
+
+  <div class="cust">
+    <div class="name">{{ doc.customer.name }}{% if doc.customer.shop_name %} — {{ doc.customer.shop_name }}{% endif %}</div>
+    {% if doc.customer.phone %}<div class="muted">{{ L.phone }}: <bdi dir="ltr">{{ doc.customer.phone }}</bdi></div>{% endif %}
+  </div>
+
+  <table class="lines">
+    <thead><tr><th>{{ L.date }}</th><th>{{ L.doc }}</th><th>{{ L.debit }}</th><th>{{ L.credit }}</th><th>{{ L.balance }}</th></tr></thead>
+    <tbody>
+    {% for r in doc.rows %}
+      <tr class="{{ r.css }}">
+        <td><bdi dir="ltr">{{ r.date }}</bdi></td>
+        <td>{{ r.label }}{% if r.number %} <bdi dir="ltr">{{ r.number }}</bdi>{% endif %}</td>
+        <td class="num">{% if r.debit %}<bdi dir="ltr">{{ r.debit }}</bdi>{% endif %}</td>
+        <td class="num">{% if r.credit %}<bdi dir="ltr">{{ r.credit }}</bdi>{% endif %}</td>
+        <td class="num"><bdi dir="ltr">{{ r.balance }}</bdi></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+
+  <table class="totals"><tbody>
+    <tr><td>{{ L.totalDebit }}</td><td><bdi dir="ltr">{{ doc.totals.debit }}</bdi></td></tr>
+    <tr><td>{{ L.totalCredit }}</td><td><bdi dir="ltr">{{ doc.totals.credit }}</bdi></td></tr>
+    <tr class="grand"><td>{{ L.closing }}</td><td><bdi dir="ltr">{{ doc.totals.closing }}</bdi></td></tr>
+  </tbody></table>
+
+  <div class="note">{{ L.balanceNote }}</div>
+  {% if doc.business.footer %}<div class="footer">{{ doc.business.footer }}</div>{% endif %}
+{% endblock %}
