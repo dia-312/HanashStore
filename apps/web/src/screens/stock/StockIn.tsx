@@ -2,8 +2,9 @@ import { useState } from 'react'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { ErrorNotice } from '../../components/Notices'
 import { ar, fill } from '../../i18n/ar'
-import { catalogApi, type StockResult, type VariantListItem } from '../../lib/catalogApi'
+import type { VariantListItem } from '../../lib/catalogApi'
 import { describeError } from '../../lib/errors'
+import { queuePurchase, type LocalStockResult } from '../../lib/sync/stockCommands'
 import { uuid7 } from '../../lib/uuid7'
 import { VariantPicker, variantLabel } from './VariantPicker'
 
@@ -17,13 +18,14 @@ const MAX_QTY = 100_000
 const parseQty = (text: string) =>
   /^\d{1,6}$/.test(text) && Number(text) >= 1 && Number(text) <= MAX_QTY ? Number(text) : null
 
-export function Result({ result, onAgain }: { result: StockResult; onAgain: () => void }) {
+export function Result({ result, onAgain }: { result: LocalStockResult; onAgain: () => void }) {
   return (
     <div role="status" className="grid gap-3 rounded-2xl bg-white p-4">
       <h3 className="text-lg font-bold">
         <span aria-hidden="true">✓ </span>
         {ar.stock.done}
       </h3>
+      <p>{ar.stock.queued}</p>
       <ul className="grid gap-1">
         {result.variants.map((v) => (
           <li key={v.id}>
@@ -48,7 +50,7 @@ export function StockIn({ onAgain }: { onAgain: () => void }) {
   const [reviewing, setReviewing] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [result, setResult] = useState<StockResult | null>(null)
+  const [result, setResult] = useState<LocalStockResult | null>(null)
 
   const add = (variant: VariantListItem) =>
     setLines((current) =>
@@ -68,9 +70,13 @@ export function StockIn({ onAgain }: { onAgain: () => void }) {
     setError(null)
     try {
       setResult(
-        await catalogApi.stockIn(
+        await queuePurchase(
           note.trim() || null,
-          lines.map((l) => ({ id: l.id, variant_id: l.variant.id, qty: parseQty(l.qty) ?? 0 })),
+          lines.map((l) => ({
+            movementId: l.id,
+            variantId: l.variant.id,
+            qty: parseQty(l.qty) ?? 0,
+          })),
         ),
       )
       setReviewing(false)

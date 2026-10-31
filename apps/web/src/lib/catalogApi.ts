@@ -119,11 +119,6 @@ export interface ImportReport {
   }[]
 }
 
-export interface StockResult {
-  applied: number
-  variants: Variant[]
-}
-
 const query = (params: Record<string, string | number | boolean | null | undefined>) => {
   const search = new URLSearchParams()
   for (const [key, value] of Object.entries(params)) {
@@ -141,23 +136,6 @@ export const catalogApi = {
   patchCategory: (id: string, body: Partial<Pick<Category, 'name' | 'is_active'>>) =>
     api<Category>(`/categories/${id}`, { method: 'PATCH', body }),
 
-  products: (p: {
-    q?: string
-    categoryId?: string
-    includeInactive?: boolean
-    cursor?: string | null
-    limit?: number
-  }) =>
-    api<Page<ProductListItem>>(
-      `/products${query({
-        q: p.q,
-        category_id: p.categoryId,
-        include_inactive: p.includeInactive,
-        cursor: p.cursor,
-        limit: p.limit,
-      })}`,
-    ),
-  product: (id: string) => api<ProductDetail>(`/products/${id}`),
   createProduct: (body: { name: string; category_id: string; description?: string | null }) =>
     api<ProductDetail>('/products', { method: 'POST', body }),
   patchProduct: (
@@ -179,8 +157,6 @@ export const catalogApi = {
     id: string,
     body: Partial<Pick<Variant, 'price' | 'min_stock' | 'is_active' | 'color' | 'size'>>,
   ) => api<Variant>(`/variants/${id}`, { method: 'PATCH', body }),
-  variants: (p: { q?: string; cursor?: string | null; limit?: number }) =>
-    api<Page<VariantListItem>>(`/variants${query({ q: p.q, cursor: p.cursor, limit: p.limit })}`),
   movements: (variantId: string, cursor?: string | null) =>
     api<Page<Movement>>(`/variants/${variantId}/movements${query({ cursor })}`),
 
@@ -196,13 +172,6 @@ export const catalogApi = {
     }),
   deleteImage: (productId: string, imageId: string) =>
     api(`/products/${productId}/images/${imageId}`, { method: 'DELETE' }),
-
-  stockIn: (note: string | null, items: { id: string; variant_id: string; qty: number }[]) =>
-    api<StockResult>('/stock/in', { method: 'POST', body: { note, items } }),
-  stockAdjust: (body: { id: string; variant_id: string; counted_qty: number; note: string }) =>
-    api<StockResult>('/stock/adjust', { method: 'POST', body }),
-  stockDamage: (body: { id: string; variant_id: string; qty: number; note: string }) =>
-    api<StockResult>('/stock/damage', { method: 'POST', body }),
 
   importProducts: (file: File, dryRun: boolean) => {
     const body = new FormData()

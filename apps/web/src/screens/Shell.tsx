@@ -1,6 +1,8 @@
-import { NavLink, Outlet } from 'react-router'
-import { ar } from '../i18n/ar'
-import { useOnline } from '../lib/online'
+import { Link, NavLink, Outlet } from 'react-router'
+import { ar, fill } from '../i18n/ar'
+import { type SyncStatus } from '../lib/sync/engine'
+import { useSyncStatus } from '../lib/sync/useSyncStatus'
+import { useUpdate } from '../lib/update'
 import { useAuth } from '../store'
 
 const NAV = [
@@ -26,23 +28,52 @@ function Banner({ children }: { children: string }) {
   )
 }
 
+// Icon + text + shape, never colour alone (CLAUDE rule on status).
+const SYNC_ICON: Record<SyncStatus, string> = {
+  synced: '✓',
+  pending: '◔',
+  syncing: '↻',
+  offline: '○',
+  error: '⚠',
+}
+
+function SyncChip() {
+  const { status, pending } = useSyncStatus()
+  const text =
+    status === 'synced'
+      ? ar.header.syncSynced
+      : status === 'pending'
+        ? fill(ar.header.syncPending, { n: pending })
+        : status === 'syncing'
+          ? ar.header.syncing
+          : status === 'offline'
+            ? pending > 0
+              ? `${ar.header.offline} · ${fill(ar.header.syncPending, { n: pending })}`
+              : ar.header.offline
+            : ar.header.syncError
+  return (
+    <Link
+      to="/sync"
+      aria-label={`${ar.header.syncOpen}: ${text}`}
+      className="flex min-h-11 items-center rounded-full border border-white/60 px-3 text-sm"
+    >
+      <span aria-hidden="true">{SYNC_ICON[status]} </span>
+      {text}
+    </Link>
+  )
+}
+
 export function Shell() {
   const { lock, sessionExpired, clockOff } = useAuth()
-  const online = useOnline()
+  const { pendingTooLong } = useSyncStatus()
+  const update = useUpdate()
 
   return (
     <div className="flex h-full flex-col">
       <header className="flex min-h-14 items-center justify-between bg-navy px-4 text-white">
         <h1 className="font-bold">{ar.appName}</h1>
         <div className="flex items-center gap-3">
-          {/* Icon + text + shape, never colour alone (CLAUDE rule on status). */}
-          <span
-            className="rounded-full border border-white/60 px-3 py-1 text-sm"
-            title={ar.header.syncSoon}
-          >
-            <span aria-hidden="true">{online ? '● ' : '○ '}</span>
-            {online ? ar.header.online : ar.header.offline}
-          </span>
+          <SyncChip />
           <button
             type="button"
             onClick={lock}
@@ -56,6 +87,23 @@ export function Shell() {
       {!isStandalone() && <Banner>{ar.banner.install}</Banner>}
       {sessionExpired && <Banner>{ar.banner.sessionExpired}</Banner>}
       {clockOff && <Banner>{ar.banner.clockOff}</Banner>}
+      {pendingTooLong && <Banner>{ar.banner.pendingOld}</Banner>}
+      {update.available && (
+        <div
+          role="status"
+          className="flex items-center gap-3 bg-accent/20 px-4 py-2 text-sm font-bold"
+        >
+          <span aria-hidden="true">⬆</span>
+          <span className="flex-1">{ar.banner.updateAvailable}</span>
+          <button
+            type="button"
+            onClick={update.apply}
+            className="min-h-11 rounded-xl bg-navy px-4 text-white"
+          >
+            {ar.banner.updateNow}
+          </button>
+        </div>
+      )}
       <div className="flex min-h-0 flex-1">
         {/* First in the DOM = right side in RTL. */}
         <nav

@@ -15,7 +15,7 @@ export default defineConfig({
     ...devices['iPad Pro 11 landscape'],
     locale: 'ar',
     timezoneId: 'Asia/Hebron',
-    trace: 'retain-on-failure',
+    trace: 'off', // tracing makes every action seconds slower here; turn on to debug a failure
     screenshot: 'only-on-failure',
   },
   projects: [{ name: 'webkit-ipad', use: { browserName: 'webkit' } }],

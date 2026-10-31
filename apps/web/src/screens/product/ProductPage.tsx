@@ -1,23 +1,33 @@
-import { useCallback, useEffect, useState, type FormEvent } from 'react'
+import { useMemo, useState, type FormEvent } from 'react'
 import { Link, useNavigate, useParams } from 'react-router'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { ErrorNotice, OfflineNotice } from '../../components/Notices'
+import { db } from '../../db'
 import { ar, fill } from '../../i18n/ar'
 import { catalogApi, type Category, type ProductDetail } from '../../lib/catalogApi'
 import { describeError } from '../../lib/errors'
-import { ApiError } from '../../lib/api'
+import { buildProductDetail, loadProductSnapshot } from '../../lib/localCatalog'
 import { useOnline } from '../../lib/online'
+import { syncNow } from '../../lib/sync/engine'
+import { useLive } from '../../lib/useLive'
 import { ImagesSection } from './ImagesSection'
 import { VariantsSection } from './VariantsSection'
 
 const input = 'min-h-12 w-full rounded-xl border-2 border-navy/30 bg-white px-3'
 
+/** Active categories from the device. */
 function useCategories() {
-  const [categories, setCategories] = useState<Category[] | null>(null)
-  useEffect(() => {
-    catalogApi.categories().then(setCategories, () => setCategories([]))
-  }, [])
-  return categories
+  const rows = useLive(() => db.categories.toArray(), [])
+  return useMemo<Category[] | null>(
+    () => rows?.filter((c) => c.is_active).map((c) => ({ ...c, product_count: 0 })) ?? null,
+    [rows],
+  )
+}
+
+/** After an online edit the server's answer comes back through a pull, so the screen, which reads
+ * the device, shows it as soon as that lands. */
+const refresh = async () => {
+  await syncNow()
 }
 
 /** Name, category and description. Used to create a product and to edit one. */
@@ -58,6 +68,7 @@ function InfoForm({
       const result = product
         ? await catalogApi.patchProduct(product.id, body)
         : await catalogApi.createProduct(body)
+      await refresh() // the device must hold the product before the screen opens it
       setSaved(true)
       onSaved(result)
     } catch (e) {
@@ -145,27 +156,17 @@ function NewProduct() {
 
 function ExistingProduct({ id }: { id: string }) {
   const categories = useCategories()
-  const [product, setProduct] = useState<ProductDetail | null>(null)
-  const [missing, setMissing] = useState(false)
+  // undefined while the device is being read, null when it has no such product.
+  const product = useLive(async () => buildProductDetail(await loadProductSnapshot(id), id), [id])
   const [failed, setFailed] = useState<string | null>(null)
   const [deactivating, setDeactivating] = useState(false)
   const [busy, setBusy] = useState(false)
 
-  const reload = useCallback(async () => {
-    setProduct(await catalogApi.product(id))
-  }, [id])
-
-  useEffect(() => {
-    catalogApi.product(id).then(setProduct, (e: unknown) => {
-      if (e instanceof ApiError && e.code === 'NOT_FOUND') setMissing(true)
-      else setFailed(describeError(e))
-    })
-  }, [id])
-
   const setActive = async (active: boolean) => {
     setBusy(true)
     try {
-      setProduct(await catalogApi.patchProduct(id, { is_active: active }))
+      await catalogApi.patchProduct(id, { is_active: active })
+      await refresh()
       setDeactivating(false)
     } catch (e) {
       setFailed(describeError(e))
@@ -174,7 +175,7 @@ function ExistingProduct({ id }: { id: string }) {
     }
   }
 
-  if (missing) return <p className="text-lg font-bold">{ar.product.notFound}</p>
+  if (product === null) return <p className="text-lg font-bold">{ar.product.notFound}</p>
   if (failed) return <ErrorNotice message={failed} />
   if (!product || categories === null) return <p aria-busy="true">{ar.common.loading}</p>
 
@@ -184,9 +185,14 @@ function ExistingProduct({ id }: { id: string }) {
         {product.name}{' '}
         {!product.is_active && <span className="text-base">({ar.catalog.inactive})</span>}
       </h2>
-      <InfoForm key={product.id} product={product} categories={categories} onSaved={setProduct} />
-      <ImagesSection productId={product.id} images={product.images} onChange={reload} />
-      <VariantsSection productId={product.id} variants={product.variants} onChange={reload} />
+      <InfoForm
+        key={product.id}
+        product={product}
+        categories={categories}
+        onSaved={() => undefined}
+      />
+      <ImagesSection productId={product.id} images={product.images} onChange={refresh} />
+      <VariantsSection productId={product.id} variants={product.variants} onChange={refresh} />
       <div>
         <button
           type="button"
@@ -218,15 +224,29 @@ export default function ProductPage() {
       <Link to="/catalog" className="inline-flex min-h-11 w-fit items-center font-bold underline">
         ← {ar.product.back}
       </Link>
-      {!online ? (
-        <OfflineNotice />
-      ) : productId === 'new' ? (
-        <>
-          <h2 className="text-2xl font-bold">{ar.product.newTitle}</h2>
-          <NewProduct />
-        </>
+      {productId === 'new' ? (
+        !online ? (
+          <OfflineNotice />
+        ) : (
+          <>
+            <h2 className="text-2xl font-bold">{ar.product.newTitle}</h2>
+            <NewProduct />
+          </>
+        )
       ) : (
-        <ExistingProduct key={productId} id={productId} />
+        <>
+          {/* Looking works offline; changing products and photos needs the server. */}
+          {!online && (
+            <p
+              role="status"
+              className="rounded-xl border-2 border-dashed border-navy/40 p-3 font-bold"
+            >
+              <span aria-hidden="true">○ </span>
+              {ar.catalog.editNeedsInternet}
+            </p>
+          )}
+          <ExistingProduct key={productId} id={productId} />
+        </>
       )}
     </section>
   )

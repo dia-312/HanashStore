@@ -1,18 +1,18 @@
-import { memo, useEffect, useState } from 'react'
+import { memo, useDeferredValue, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ErrorNotice, OfflineNotice } from '../components/Notices'
 import { StatusBadge } from '../components/StatusBadge'
 import { Thumb } from '../components/Thumb'
 import { ar, fill } from '../i18n/ar'
-import { catalogApi, type Category, type ProductListItem } from '../lib/catalogApi'
+import type { ProductListItem } from '../lib/catalogApi'
+import { buildCategories, buildProductList, loadSnapshot } from '../lib/localCatalog'
 import { formatMoney } from '../lib/money'
 import { useOnline } from '../lib/online'
-import { usePagedList } from '../lib/usePagedList'
+import { useSync } from '../lib/sync/engine'
+import { useLive } from '../lib/useLive'
 
 type View = 'grid' | 'list'
 const VIEW_KEY = 'catalog-view'
-const PAGE_SIZE = 50
 const GAP = 12
 
 function loadView(): View {
@@ -108,25 +108,19 @@ function useWidth(element: HTMLElement | null) {
   return width
 }
 
-/** Remounted (by `key`) whenever the search or filters change, so it always starts from page one. */
 function ProductList({
-  q,
-  categoryId,
-  includeInactive,
+  items,
+  filtered,
   view,
 }: {
-  q: string
-  categoryId?: string
-  includeInactive: boolean
+  items: ProductListItem[]
+  filtered: boolean
   view: View
 }) {
-  const list = usePagedList<ProductListItem>((cursor) =>
-    catalogApi.products({ q, categoryId, includeInactive, cursor, limit: PAGE_SIZE }),
-  )
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null)
   const width = useWidth(scroller)
   const columns = view === 'list' ? 1 : Math.max(2, Math.floor(width / 190))
-  const rows = Math.ceil(list.items.length / columns)
+  const rows = Math.ceil(items.length / columns)
   const columnWidth = width > 0 ? (width - GAP * (columns - 1)) / columns : 190
 
   // TanStack's virtualizer is not memoizable by the React compiler; nothing here relies on that.
@@ -138,25 +132,9 @@ function ProductList({
     overscan: 3,
     // Until the box is measured, assume it is as tall as the window: the first frame already has rows.
     initialRect: { width: 0, height: window.innerHeight },
-    onChange: (instance) => {
-      const last = instance.getVirtualItems().at(-1)
-      if (last && last.index >= rows - 3) list.loadMore()
-    },
   })
 
-  if (list.loading && list.items.length === 0) {
-    return (
-      <div aria-busy="true" className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        {Array.from({ length: 8 }, (_, i) => (
-          <div key={i} className="aspect-[3/4] animate-pulse rounded-xl bg-navy/10" />
-        ))}
-      </div>
-    )
-  }
-  if (list.failed && list.items.length === 0)
-    return <ErrorNotice message={ar.catalog.loadFailed} onRetry={list.retry} />
-  if (list.items.length === 0) {
-    const filtered = q !== '' || categoryId !== undefined
+  if (items.length === 0) {
     return filtered ? (
       <p className="py-10 text-center text-lg">{ar.catalog.noResults}</p>
     ) : (
@@ -190,51 +168,43 @@ function ProductList({
               className="grid gap-3"
               style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
             >
-              {list.items.slice(row.index * columns, (row.index + 1) * columns).map((item) => (
+              {items.slice(row.index * columns, (row.index + 1) * columns).map((item) => (
                 <ProductTile key={item.id} item={item} asList={view === 'list'} />
               ))}
             </div>
           </div>
         ))}
       </div>
-      {list.hasMore && (
-        <div className="py-3 text-center">
-          {list.failed ? (
-            <ErrorNotice message={ar.catalog.loadFailed} onRetry={list.retry} />
-          ) : (
-            <button
-              type="button"
-              onClick={list.loadMore}
-              disabled={list.loading}
-              className="min-h-12 rounded-xl border-2 border-navy/30 bg-white px-6 font-bold"
-            >
-              {ar.catalog.loadMore}
-            </button>
-          )}
-        </div>
-      )}
+    </div>
+  )
+}
+
+function Skeleton() {
+  return (
+    <div aria-busy="true" className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      {Array.from({ length: 8 }, (_, i) => (
+        <div key={i} className="aspect-[3/4] animate-pulse rounded-xl bg-navy/10" />
+      ))}
     </div>
   )
 }
 
 export function Catalog() {
   const online = useOnline()
+  const firstSyncDone = useSync((s) => s.firstSyncDone)
   const [text, setText] = useState('')
-  const [q, setQ] = useState('')
+  // Typing never waits for the list: React renders the results when it has a free moment.
+  const q = useDeferredValue(text.trim())
   const [categoryId, setCategoryId] = useState<string | undefined>()
   const [includeInactive, setIncludeInactive] = useState(false)
   const [view, setView] = useState<View>(loadView)
-  const [categories, setCategories] = useState<Category[]>([])
+  const snapshot = useLive(loadSnapshot, [])
 
-  useEffect(() => {
-    const timer = setTimeout(() => setQ(text.trim()), 250)
-    return () => clearTimeout(timer)
-  }, [text])
-
-  useEffect(() => {
-    if (!online) return
-    catalogApi.categories().then(setCategories, () => undefined)
-  }, [online])
+  const categories = useMemo(() => (snapshot ? buildCategories(snapshot) : []), [snapshot])
+  const items = useMemo(
+    () => (snapshot ? buildProductList(snapshot, { q, categoryId, includeInactive }) : []),
+    [snapshot, q, categoryId, includeInactive],
+  )
 
   const chooseView = (next: View) => {
     setView(next)
@@ -244,6 +214,9 @@ export function Catalog() {
       /* the choice just isn't remembered */
     }
   }
+
+  // The very first start on this device: nothing to show until the first pull has arrived.
+  const nothingYet = snapshot !== undefined && snapshot.products.length === 0 && !firstSyncDone
 
   return (
     <section className="flex h-full flex-col gap-3">
@@ -275,12 +248,14 @@ export function Catalog() {
             ☰ {ar.catalog.list}
           </button>
         </div>
-        <Link
-          to="/catalog/new"
-          className="inline-flex min-h-12 items-center rounded-xl bg-navy px-5 font-bold text-white"
-        >
-          + {ar.catalog.newProduct}
-        </Link>
+        {online && (
+          <Link
+            to="/catalog/new"
+            className="inline-flex min-h-12 items-center rounded-xl bg-navy px-5 font-bold text-white"
+          >
+            + {ar.catalog.newProduct}
+          </Link>
+        )}
       </div>
       <div className="flex gap-2 overflow-x-auto pb-1" role="group">
         <button
@@ -311,16 +286,17 @@ export function Catalog() {
           {ar.catalog.inactive}
         </button>
       </div>
-      {online ? (
-        <ProductList
-          key={`${q}|${categoryId ?? ''}|${includeInactive}`}
-          q={q}
-          categoryId={categoryId}
-          includeInactive={includeInactive}
-          view={view}
-        />
+      {snapshot === undefined ? (
+        <Skeleton />
+      ) : nothingYet ? (
+        <>
+          <p role="status" className="font-bold">
+            {online ? ar.catalog.firstSync : ar.catalog.firstSyncOffline}
+          </p>
+          <Skeleton />
+        </>
       ) : (
-        <OfflineNotice />
+        <ProductList items={items} filtered={q !== '' || categoryId !== undefined} view={view} />
       )}
     </section>
   )
