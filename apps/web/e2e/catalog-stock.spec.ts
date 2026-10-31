@@ -541,6 +541,78 @@ test('the same sale command sent again does not make a second invoice', async ()
   expect(invoice.number).toMatch(/^INV-\d{6}$/)
 })
 
+test('M5: business details, the invoice PDF online, its picture offline, and the statement', async () => {
+  // business details are saved on the server and come back in the next pull
+  await goTo(ar.nav.settings)
+  await page.getByRole('link', { name: ar.settings.business }).click()
+  await page.getByLabel(ar.business.name).fill('شركة النور')
+  await page.getByLabel(ar.business.phone).fill('0568123456')
+  await page.getByLabel(ar.business.footer).fill('شكراً لتعاملكم معنا')
+  await page.getByRole('button', { name: ar.form.save }).click()
+  await expect(page.getByText(ar.form.saved)).toBeVisible()
+  const settings = await json<{ business_name: string; phone: string }>('/api/v1/settings')
+  expect(settings).toMatchObject({ business_name: 'شركة النور', phone: '0568123456' })
+
+  // the invoice the server already has: a real PDF, named after it, through Caddy
+  const [invoice] = (await pulled()).changes.invoices
+  const res = await (await server()).get(`/api/v1/invoices/${invoice?.id}/pdf`, { timeout: 30_000 })
+  expect(res.status()).toBe(200)
+  expect(res.headers()['content-type']).toContain('application/pdf')
+  expect(res.headers()['content-disposition']).toContain(`${invoice?.number}.pdf`)
+  expect((await res.body()).subarray(0, 5).toString()).toBe('%PDF-')
+
+  await goTo(ar.nav.invoices)
+  await page
+    .getByRole('link', { name: /INV-\d{6}/ })
+    .first()
+    .click()
+  await page.getByRole('button', { name: ar.share.preparePdf }).click()
+  await expect(page.getByText(`جاهز: ${invoice?.number}.pdf`)).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('button', { name: ar.share.share })).toBeVisible()
+
+  // offline there is no PDF, but the picture is drawn on the device and decodes
+  await page.context().setOffline(true)
+  await expect(page.getByRole('button', { name: ar.share.preparePdf })).toHaveCount(0)
+  await expect(page.getByText(ar.share.pdfNeedsInternet)).toBeVisible()
+  await page.getByRole('button', { name: ar.share.preparePng }).click()
+  await expect(page.getByText(`جاهز: ${invoice?.number}.png`)).toBeVisible({ timeout: 60_000 })
+  const preview = page.getByRole('img', { name: ar.share.preview })
+  await expect(preview).toBeVisible()
+  const size = await preview.evaluate((img: HTMLImageElement) => ({
+    ok: img.complete,
+    width: img.naturalWidth,
+    height: img.naturalHeight,
+  }))
+  expect(size.ok).toBe(true)
+  expect(size.width).toBeGreaterThan(1200) // A4 at 2x
+  expect(size.height).toBeGreaterThan(600) // as tall as the invoice, not blank
+
+  // the statement: opening 100, invoice 91, payment 30 = he owes 161, same as the server says
+  await goTo(ar.nav.customers)
+  await page
+    .getByRole('link', { name: /محل الاختبار/ })
+    .first()
+    .click()
+  await page.getByRole('link', { name: ar.statement.open }).click()
+  const table = page.getByRole('table')
+  await expect(table.getByText(ar.statement.opening)).toBeVisible()
+  await expect(table.getByText(/INV-\d{6}/)).toBeVisible()
+  await expect(table.getByText(/REC-\d{6}/)).toBeVisible()
+  await expect(page.getByText(ar.statement.closing).first().locator('..')).toContainText('161.00')
+  await expect(page.getByRole('button', { name: ar.share.preparePng })).toBeVisible()
+  await page.context().setOffline(false)
+
+  const customer = (await pulled()).changes.customers.find((c) => c.name === 'محل الاختبار')
+  const rows = await json<{ closing: number; rows: { kind: string }[] }>(
+    `/api/v1/customers/${customer?.id}/statement`,
+  )
+  expect(rows.closing).toBe(16100)
+  expect(rows.rows.map((r) => r.kind)).toEqual(['opening', 'invoice', 'payment'])
+  const statementPdf = await (await server()).get(`/api/v1/customers/${customer?.id}/statement.pdf`)
+  expect(statementPdf.status()).toBe(200)
+  expect((await statementPdf.body()).subarray(0, 5).toString()).toBe('%PDF-')
+})
+
 test('mark the invoice delivered, then cancel it giving the payment back', async () => {
   await goTo(ar.nav.invoices)
   await page
