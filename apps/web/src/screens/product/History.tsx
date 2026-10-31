@@ -1,7 +1,10 @@
 import { ErrorNotice } from '../../components/Notices'
-import { ar } from '../../i18n/ar'
+import { ar, fill } from '../../i18n/ar'
 import { catalogApi, type Movement, type Variant } from '../../lib/catalogApi'
 import { formatDateTime } from '../../lib/date'
+import { commandEffectOn } from '../../lib/sync/commands'
+import { pendingCommands } from '../../lib/sync/outbox'
+import { useLive } from '../../lib/useLive'
 import { usePagedList } from '../../lib/usePagedList'
 
 const TYPES = ar.product.movementTypes as Record<string, string>
@@ -10,6 +13,15 @@ const TYPES = ar.product.movementTypes as Record<string, string>
  * is read page by page (50 at a time) instead of all at once (SPEC section 17). */
 export function History({ variant, onClose }: { variant: Variant; onClose: () => void }) {
   const list = usePagedList<Movement>((cursor) => catalogApi.movements(variant.id, cursor))
+  // Commands saved on this device that the server has not received yet: they are not in the list
+  // the server returns, so they are shown above it, marked as waiting.
+  const waiting = useLive(async () => {
+    const commands = await pendingCommands()
+    return commands.flatMap((c) => {
+      const effect = commandEffectOn(c.type, c.payload, variant.id)
+      return effect ? [{ id: c.id, created_at: c.created_at, ...effect }] : []
+    })
+  }, [variant.id])
   return (
     <section className="grid gap-3 rounded-2xl border-2 border-navy bg-white p-4">
       <div className="flex items-center justify-between gap-3">
@@ -24,6 +36,44 @@ export function History({ variant, onClose }: { variant: Variant; onClose: () =>
           {ar.form.close}
         </button>
       </div>
+      {waiting && waiting.length > 0 && (
+        <div className="grid gap-2 rounded-xl border-2 border-dashed border-navy/40 p-3">
+          <h4 className="font-bold">
+            <span aria-hidden="true">◔ </span>
+            {ar.product.waiting}
+          </h4>
+          <p className="text-sm">{ar.product.waitingHint}</p>
+          <ul className="grid gap-2">
+            {waiting.map((w) => (
+              <li key={w.id} className="flex items-center justify-between gap-3">
+                <span>
+                  <span className="block font-bold">
+                    {
+                      TYPES[
+                        w.type === 'stock.purchase'
+                          ? 'purchase'
+                          : w.type === 'stock.damage'
+                            ? 'damage'
+                            : 'adjustment'
+                      ]
+                    }
+                  </span>
+                  <span className="block text-sm opacity-70">
+                    <bdi>{formatDateTime(w.created_at)}</bdi>
+                  </span>
+                </span>
+                <bdi className="font-bold">
+                  {w.counted
+                    ? fill(ar.product.waitingCount, { n: w.qty })
+                    : w.qty > 0
+                      ? `▲ +${w.qty}`
+                      : `▼ ${w.qty}`}
+                </bdi>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {list.loading && list.items.length === 0 && <p aria-busy="true">{ar.common.loading}</p>}
       {list.failed && <ErrorNotice message={ar.catalog.loadFailed} onRetry={list.retry} />}
       {!list.loading && !list.failed && list.items.length === 0 && (

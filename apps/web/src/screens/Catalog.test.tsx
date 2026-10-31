@@ -5,6 +5,7 @@ import { db, wipeLocalData, type DbProduct, type DbVariant } from '../db'
 import { ar } from '../i18n/ar'
 import { useSync } from '../lib/sync/engine'
 import { normalizeArabic } from '../lib/normalize'
+import { readPerf } from '../lib/perf'
 import { Catalog } from './Catalog'
 
 // jsdom has no layout, so the real virtualizer would show no rows. The library is not what is tested
@@ -93,13 +94,24 @@ describe('Catalog screen (reads the device, not the network)', () => {
     expect(screen.getAllByText(/1.?0\.00/).length).toBeGreaterThan(0)
   })
 
-  it('never calls the network', async () => {
-    const fetchStub = vi.fn()
+  it('reads products from the device: the only thing it asks the server for is what changed', async () => {
+    const fetchStub = vi.fn<(url: string) => Promise<Response>>(
+      async () =>
+        new Response(
+          JSON.stringify({
+            changes: { categories: [], products: [], variants: [], images: [] },
+            cursor: 0,
+            has_more: false,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    )
     vi.stubGlobal('fetch', fetchStub)
     await addProduct(1)
     renderCatalog()
     await screen.findByText('منتج 1')
-    expect(fetchStub).not.toHaveBeenCalled()
+    await waitFor(() => expect(fetchStub).toHaveBeenCalled())
+    for (const [url] of fetchStub.mock.calls) expect(String(url)).toContain('/sync/pull')
   })
 
   it('works offline: the same products are there', async () => {
@@ -202,5 +214,14 @@ describe('Catalog screen (reads the device, not the network)', () => {
     await screen.findByText(ar.empty.catalog.title)
     await addProduct(7)
     expect(await screen.findByText('منتج 7')).toBeTruthy()
+  })
+})
+
+describe('Catalog timing', () => {
+  it('keeps how long it took to open, so Settings can show it', async () => {
+    await addProduct(1)
+    renderCatalog()
+    await screen.findByText('منتج 1')
+    await waitFor(async () => expect(typeof (await readPerf())?.catalogOpenMs).toBe('number'))
   })
 })

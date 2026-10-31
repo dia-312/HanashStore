@@ -9,6 +9,7 @@ import { describeError } from '../../lib/errors'
 import { buildProductDetail, loadProductSnapshot } from '../../lib/localCatalog'
 import { useOnline } from '../../lib/online'
 import { syncNow } from '../../lib/sync/engine'
+import { useSyncOnOpen } from '../../lib/sync/useSyncOnOpen'
 import { useLive } from '../../lib/useLive'
 import { ImagesSection } from './ImagesSection'
 import { VariantsSection } from './VariantsSection'
@@ -219,6 +220,7 @@ function ExistingProduct({ id }: { id: string }) {
 export default function ProductPage() {
   const { productId = '' } = useParams()
   const online = useOnline()
+  useSyncOnOpen()
   return (
     <section className="grid gap-4">
       <Link to="/catalog" className="inline-flex min-h-11 w-fit items-center font-bold underline">

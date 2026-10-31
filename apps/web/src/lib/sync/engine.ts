@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { getMeta, setMeta } from '../../db'
 import { ApiError } from '../api'
 import { runImageQueue } from './images'
+import { recordPerf } from '../perf'
 import { pendingCount } from './outbox'
 import { pullAll } from './pull'
 import { pushPending } from './push'
@@ -56,11 +57,14 @@ let again = false
 /** One push and pull. Returns false when it failed (the reason is in the store). */
 async function runOnce(): Promise<boolean> {
   try {
+    const first = (await getMeta<number>('syncCursor')) === undefined
+    const started = performance.now()
     await pushPending()
     await pullAll()
     const now = Date.now()
     await setMeta('lastSyncAt', now)
     useSync.setState({ lastSyncAt: now, lastError: null, firstSyncDone: true })
+    if (first) void recordPerf({ firstSyncMs: Math.round(performance.now() - started) })
     void runImageQueue() // after first paint and never awaited: images must not delay anything
     return true
   } catch (e) {

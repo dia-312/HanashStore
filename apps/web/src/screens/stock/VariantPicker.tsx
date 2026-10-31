@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useDeferredValue, useState } from 'react'
 import { StatusBadge } from '../../components/StatusBadge'
 import { Thumb } from '../../components/Thumb'
 import { ar } from '../../i18n/ar'
@@ -60,11 +60,9 @@ function Results({ q, onPick }: { q: string; onPick: (v: VariantListItem) => voi
 /** Search box plus results; tapping a result calls `onPick`. */
 export function VariantPicker({ onPick }: { onPick: (v: VariantListItem) => void }) {
   const [text, setText] = useState('')
-  const [q, setQ] = useState('')
-  useEffect(() => {
-    const timer = setTimeout(() => setQ(text.trim()), 250)
-    return () => clearTimeout(timer)
-  }, [text])
+  // The list comes from the device, so there is nothing to wait for: results follow the typing
+  // as soon as React has a free moment (no delay that could swap the list under a tap).
+  const q = useDeferredValue(text.trim())
   return (
     <div className="grid gap-3">
       <input
