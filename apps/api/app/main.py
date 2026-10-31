@@ -1,5 +1,7 @@
 import mimetypes
-from collections.abc import Awaitable, Callable
+import threading
+from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response
 from fastapi.staticfiles import StaticFiles
@@ -22,6 +24,7 @@ from app.routers import (
     sync,
     variants,
 )
+from app.services import pdf
 
 # The Windows registry has no entry for WebP, which would make dev serve images as octet-stream.
 mimetypes.add_type("image/webp", ".webp")
@@ -29,8 +32,21 @@ mimetypes.add_type("image/webp", ".webp")
 _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 
+@asynccontextmanager
+async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    # In the background, so the API answers at once while WeasyPrint loads.
+    threading.Thread(target=pdf.warm_up, name="pdf-warm-up", daemon=True).start()
+    yield
+
+
 def create_app() -> FastAPI:
-    app = FastAPI(title="Sales Rep API", docs_url=None, redoc_url=None, openapi_url=None)
+    app = FastAPI(
+        title="Sales Rep API",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
+        lifespan=_lifespan,
+    )
     app.state.login_limiter = LoginLimiter()
     install_error_handlers(app)
 
