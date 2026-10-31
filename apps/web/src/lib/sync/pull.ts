@@ -4,7 +4,11 @@ import {
   getMeta,
   setMeta,
   type DbCategory,
+  type DbCustomer,
   type DbImage,
+  type DbInvoice,
+  type DbInvoiceLine,
+  type DbPayment,
   type DbProduct,
   type DbVariant,
 } from '../../db'
@@ -16,6 +20,10 @@ export interface PullPage {
     products: DbProduct[]
     variants: DbVariant[]
     images: DbImage[]
+    customers: DbCustomer[]
+    invoices: DbInvoice[]
+    invoice_lines: DbInvoiceLine[]
+    payments: DbPayment[]
   }
   cursor: number
   has_more: boolean
@@ -30,14 +38,16 @@ export const CHUNK = 250
 /**
  * Applies one page. The rows go in in chunks, each its own transaction, and the cursor moves last,
  * so a page cut short (the app closed half-way) is simply fetched and applied again: writing a row
- * twice changes nothing.
+ * twice changes nothing. A row made on this device and not yet confirmed has `change_seq` 0, so
+ * the server's version always replaces it.
  */
 export async function applyPage(page: PullPage): Promise<void> {
-  const { categories, products, variants, images } = page.changes
+  const c = page.changes
   const write = async <T extends { id: string; change_seq: number }>(
-    rows: T[],
+    rows: T[] | undefined,
     table: Table<T, string>,
   ) => {
+    if (!rows) return
     for (let i = 0; i < rows.length; i += CHUNK) {
       const chunk = rows.slice(i, i + CHUNK)
       await db.transaction('rw', table, async () => {
@@ -48,20 +58,21 @@ export async function applyPage(page: PullPage): Promise<void> {
       })
     }
   }
-  await write(categories, db.categories as unknown as Table<DbCategory, string>)
-  await write(products, db.products as unknown as Table<DbProduct, string>)
-  await write(variants, db.variants as unknown as Table<DbVariant, string>)
-  await write(images, db.images as unknown as Table<DbImage, string>)
+  await write(c.categories, db.categories as unknown as Table<DbCategory, string>)
+  await write(c.products, db.products as unknown as Table<DbProduct, string>)
+  await write(c.variants, db.variants as unknown as Table<DbVariant, string>)
+  await write(c.images, db.images as unknown as Table<DbImage, string>)
+  await write(c.customers, db.customers as unknown as Table<DbCustomer, string>)
+  await write(c.invoices, db.invoices as unknown as Table<DbInvoice, string>)
+  await write(c.invoice_lines, db.invoice_lines as unknown as Table<DbInvoiceLine, string>)
+  await write(c.payments, db.payments as unknown as Table<DbPayment, string>)
   await setMeta(CURSOR_KEY, page.cursor)
 }
 
 export const pullPage = (cursor: number) => api<PullPage>(`/sync/pull?cursor=${cursor}`)
 
 const rowCount = (page: PullPage) =>
-  page.changes.categories.length +
-  page.changes.products.length +
-  page.changes.variants.length +
-  page.changes.images.length
+  Object.values(page.changes).reduce((sum, rows) => sum + (rows?.length ?? 0), 0)
 
 /** Pulls until the server has nothing newer. Returns how many rows came in. */
 export async function pullAll(fetchPage: (cursor: number) => Promise<PullPage> = pullPage) {

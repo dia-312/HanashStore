@@ -4,7 +4,14 @@ import uuid
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    field_validator,
+    model_validator,
+)
 
 from app.models import ProductVariant
 
@@ -270,11 +277,76 @@ class SyncImage(Out):
     change_seq: int
 
 
+class SyncCustomer(Out):
+    id: uuid.UUID
+    name: str
+    shop_name: str | None
+    phone: str | None
+    area: str | None
+    address: str | None
+    notes: str | None
+    opening_balance: int
+    search_text: str
+    is_active: bool
+    # Worked out when the page is built (opening + invoices - returns - payments), never stored.
+    balance: int = 0
+    change_seq: int
+
+
+class SyncInvoice(Out):
+    id: uuid.UUID
+    number: str
+    customer_id: uuid.UUID
+    status: str
+    subtotal: int
+    discount: int
+    total: int
+    note: str | None
+    issued_at: datetime
+    delivered_at: datetime | None
+    cancelled_at: datetime | None
+    cancel_reason: str | None
+    change_seq: int
+
+
+class SyncInvoiceLine(Out):
+    id: uuid.UUID
+    invoice_id: uuid.UUID
+    variant_id: uuid.UUID
+    product_name: str
+    variant_label: str
+    qty: int
+    unit_price: int
+    line_total: int
+    discount_share: int
+    sort_order: int
+    change_seq: int
+
+
+class SyncPayment(Out):
+    id: uuid.UUID
+    number: str
+    customer_id: uuid.UUID
+    invoice_id: uuid.UUID | None
+    method: str
+    amount: int
+    paid_at: datetime
+    note: str | None
+    status: str
+    voided_at: datetime | None
+    void_reason: str | None
+    change_seq: int
+
+
 class PullChanges(BaseModel):
     categories: list[SyncCategory]
     products: list[SyncProduct]
     variants: list[SyncVariant]
     images: list[SyncImage]
+    customers: list[SyncCustomer]
+    invoices: list[SyncInvoice]
+    invoice_lines: list[SyncInvoiceLine]
+    payments: list[SyncPayment]
 
 
 class PullPage(BaseModel):
@@ -314,3 +386,92 @@ class ImportReport(BaseModel):
     skipped_existing: int  # variants that already exist: left untouched
     opening_units: int
     preview: list[PreviewRow]
+
+
+DocNumber = Annotated[str, StringConstraints(pattern=r"^[A-Z]{3}-\d{6,9}$")]
+Text500 = Annotated[str, StringConstraints(strip_whitespace=True, max_length=500)]
+PaymentMethod = Literal["cash", "transfer", "cheque"]
+
+
+class CustomerPayload(BaseModel):
+    """customer.upsert: add a customer or edit one."""
+
+    customer_id: uuid.UUID
+    name: Name
+    shop_name: ShortText | None = None
+    phone: ShortText | None = None
+    area: ShortText | None = None
+    address: Text500 | None = None
+    notes: Description | None = None
+    opening_balance: Annotated[int, Field(ge=-MAX_PRICE, le=MAX_PRICE)] = 0
+    is_active: bool = True
+
+
+class PaymentIn(BaseModel):
+    payment_id: uuid.UUID
+    number: DocNumber
+    amount: Annotated[int, Field(ge=1, le=MAX_PRICE)]
+    method: PaymentMethod
+    note: Text500 | None = None
+
+    @field_validator("number")
+    @classmethod
+    def _receipt_number(cls, value: str) -> str:
+        if not value.startswith("REC-"):
+            raise ValueError("a payment number looks like REC-000010")
+        return value
+
+    @model_validator(mode="after")
+    def _cheque_needs_details(self) -> "PaymentIn":
+        # The rep writes the cheque number, bank and date in the note (SPEC F10).
+        if self.method == "cheque" and not (self.note or "").strip():
+            raise ValueError("a cheque needs its details in the note")
+        return self
+
+
+class InvoiceLineIn(BaseModel):
+    line_id: uuid.UUID
+    variant_id: uuid.UUID
+    qty: Qty
+    unit_price: Price  # the price the customer agreed to; the server only warns if it changed
+
+
+class InvoiceCreatePayload(BaseModel):
+    """invoice.create: a confirmed sale, with the payment taken at checkout if any."""
+
+    invoice_id: uuid.UUID
+    number: DocNumber
+    customer_id: uuid.UUID
+    issued_at: datetime  # the device clock at confirmation (SPEC section 7)
+    discount: Price = 0
+    note: Text500 | None = None
+    payment: PaymentIn | None = None
+    lines: Annotated[list[InvoiceLineIn], Field(min_length=1, max_length=200)]
+
+    @field_validator("number")
+    @classmethod
+    def _invoice_number(cls, value: str) -> str:
+        if not value.startswith("INV-"):
+            raise ValueError("an invoice number looks like INV-000042")
+        return value
+
+
+class MarkDeliveredPayload(BaseModel):
+    invoice_id: uuid.UUID
+    delivered_at: datetime
+
+
+class CancelLine(BaseModel):
+    variant_id: uuid.UUID
+    qty: Qty
+
+
+class CancelPayload(BaseModel):
+    """invoice.cancel. `lines` is what the device knows, for its own stock preview: the server
+    uses the invoice's own lines."""
+
+    invoice_id: uuid.UUID
+    cancelled_at: datetime
+    reason: Note
+    void_payment: bool = False
+    lines: list[CancelLine] = []

@@ -4,6 +4,12 @@ import { ar } from './i18n/ar'
 import { startSyncLoop } from './lib/sync/engine'
 import { resumeImageDownloads, setImagesPaused } from './lib/sync/images'
 import { Catalog } from './screens/Catalog'
+import Checkout from './screens/checkout/Checkout'
+import { CustomerProfile } from './screens/customers/CustomerProfile'
+import { EditCustomer, NewCustomer } from './screens/customers/CustomerForm'
+import { Customers } from './screens/customers/Customers'
+import InvoiceView from './screens/invoices/InvoiceView'
+import Present from './screens/present/Present'
 import { EmptyPage } from './screens/EmptyPage'
 import { Lock } from './screens/Lock'
 import { Login } from './screens/Login'
@@ -20,12 +26,9 @@ const Stock = lazy(() => import('./screens/stock/Stock'))
 const Categories = lazy(() => import('./screens/settings/Categories'))
 const ImportProducts = lazy(() => import('./screens/settings/ImportProducts'))
 const SyncScreen = lazy(() => import('./screens/Sync'))
+const Invoices = lazy(() => import('./screens/invoices/Invoices'))
 
-const pages = [
-  { path: 'customers', ...ar.empty.customers },
-  { path: 'invoices', ...ar.empty.invoices },
-  { path: 'reports', ...ar.empty.reports },
-]
+const pages = [{ path: 'reports', ...ar.empty.reports }]
 
 const lazyPage = (page: React.ReactNode) => (
   <Suspense fallback={<p>{ar.common.loading}</p>}>{page}</Suspense>
@@ -64,12 +67,21 @@ export function App() {
       return (
         <BrowserRouter>
           <Routes>
+            {/* Presentation mode is full screen: no navigation, nothing of the rep's app. */}
+            <Route path="present/:customerId?" element={<Present />} />
             <Route element={<Shell />}>
               <Route index element={<EmptyPage {...ar.empty.home} />} />
               {pages.map(({ path, ...page }) => (
                 <Route key={path} path={path} element={<EmptyPage {...page} />} />
               ))}
               <Route path="catalog" element={<Catalog />} />
+              <Route path="customers" element={<Customers />} />
+              <Route path="customers/new" element={<NewCustomer />} />
+              <Route path="customers/:customerId" element={<CustomerProfile />} />
+              <Route path="customers/:customerId/edit" element={<EditCustomer />} />
+              <Route path="checkout/:customerId?" element={<Checkout />} />
+              <Route path="invoices" element={lazyPage(<Invoices />)} />
+              <Route path="invoices/:invoiceId" element={<InvoiceView />} />
               <Route path="catalog/:productId" element={lazyPage(<ProductPage />)} />
               <Route path="stock" element={lazyPage(<Stock />)} />
               <Route path="sync" element={lazyPage(<SyncScreen />)} />

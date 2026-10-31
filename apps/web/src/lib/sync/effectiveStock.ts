@@ -1,5 +1,11 @@
 import type { OutboxRow } from '../../db'
-import type { AdjustPayload, DamagePayload, PurchasePayload } from './commands'
+import type {
+  AdjustPayload,
+  CancelPayload,
+  DamagePayload,
+  InvoiceCreatePayload,
+  PurchasePayload,
+} from './commands'
 
 type PendingCommand = Pick<OutboxRow, 'type' | 'payload' | 'status'>
 
@@ -31,6 +37,17 @@ export function pendingStock(
     } else if (command.type === 'stock.adjust') {
       const { variant_id, counted_qty } = command.payload as AdjustPayload
       if (get(variant_id) !== undefined) current.set(variant_id, counted_qty)
+    } else if (command.type === 'invoice.create') {
+      // A sale that really happened is always recorded, even if it takes stock below zero.
+      for (const line of (command.payload as InvoiceCreatePayload).lines) {
+        const qty = get(line.variant_id)
+        if (qty !== undefined) current.set(line.variant_id, qty - line.qty)
+      }
+    } else if (command.type === 'invoice.cancel') {
+      for (const line of (command.payload as CancelPayload).lines) {
+        const qty = get(line.variant_id)
+        if (qty !== undefined) current.set(line.variant_id, qty + line.qty)
+      }
     }
   }
   return current

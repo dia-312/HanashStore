@@ -39,7 +39,17 @@ const page = (
   cursor: number,
   hasMore = false,
 ): PullPage => ({
-  changes: { categories: [], products: [], variants: [], images: [], ...partial },
+  changes: {
+    categories: [],
+    products: [],
+    variants: [],
+    images: [],
+    customers: [],
+    invoices: [],
+    invoice_lines: [],
+    payments: [],
+    ...partial,
+  },
   cursor,
   has_more: hasMore,
 })
@@ -359,10 +369,16 @@ describe('sync engine', () => {
   })
 
   it('a call during a run joins it: one run at a time', async () => {
-    const fetchStub = vi.fn(async () => json(page({}, 0)))
+    const fetchStub = vi.fn<(url: string) => Promise<Response>>(async () => json(page({}, 0)))
     vi.stubGlobal('fetch', fetchStub)
     await Promise.all([syncNow(), syncNow(), syncNow()])
-    expect(fetchStub).toHaveBeenCalledTimes(1) // one pull, no push (nothing pending)
+    // One pull and the numbers check, no push (nothing pending), however many callers there were.
+    expect(
+      fetchStub.mock.calls.map(([url]) => String(url)).filter((u) => u.includes('/sync/pull')),
+    ).toHaveLength(1)
+    expect(
+      fetchStub.mock.calls.map(([url]) => String(url)).filter((u) => u.includes('/sync/push')),
+    ).toHaveLength(0)
   })
 
   it('a command made while a run is under way is sent in a second round, not a minute later', async () => {

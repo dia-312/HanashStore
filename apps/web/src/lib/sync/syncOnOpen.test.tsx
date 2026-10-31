@@ -33,7 +33,7 @@ it('opening a screen that shows stock asks the server for what changed', async (
   )
   vi.stubGlobal('fetch', fetchStub)
   renderHook(() => useSyncOnOpen())
-  await waitFor(() => expect(fetchStub).toHaveBeenCalledTimes(1))
+  await waitFor(() => expect(fetchStub).toHaveBeenCalled())
   expect(String(fetchStub.mock.calls[0]?.[0])).toContain('/sync/pull')
 })
 

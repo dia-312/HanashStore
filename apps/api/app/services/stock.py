@@ -61,11 +61,15 @@ def apply_movement(
     device_id: uuid.UUID | None = None,
     ref_type: str | None = None,
     ref_id: uuid.UUID | None = None,
+    allow_negative: bool = False,
 ) -> MovementResult:
     """Insert one movement and update the stock cache.
 
     `qty` is the amount for every type except `adjustment`, where it is the signed difference.
-    Sending the same `movement_id` again changes nothing (the client retries after a lost reply)."""
+    Sending the same `movement_id` again changes nothing (the client retries after a lost reply).
+
+    `allow_negative` is only for a sale the device already made: it really happened, so it is
+    recorded and the caller reports the negative stock (SPEC section 7)."""
     if type not in _SIGN:
         raise ApiError(422, "VALIDATION_ERROR", f"Unknown movement type {type}")
     sign = _SIGN[type]
@@ -85,7 +89,7 @@ def apply_movement(
         raise ApiError(409, "VARIANT_INACTIVE", "Variant is deactivated")
 
     new_qty = variant.stock_qty + signed
-    if new_qty < 0 and type in _CANNOT_GO_NEGATIVE:
+    if new_qty < 0 and type in _CANNOT_GO_NEGATIVE and not allow_negative:
         raise ApiError(
             409,
             "INSUFFICIENT_STOCK",
@@ -188,3 +192,19 @@ def stock_mismatches(db: Session) -> list[tuple[uuid.UUID, int, int]]:
         .where(ProductVariant.stock_qty != func.coalesce(sums.c.total, 0))
     ).all()
     return [(r[0], r[1], int(r[2])) for r in rows]
+
+
+def variant_states(db: Session, variant_ids: list[uuid.UUID]) -> list[dict[str, int | str]]:
+    """What a device needs to show new stock at once after a command, without a pull."""
+    out: list[dict[str, int | str]] = []
+    for variant_id in dict.fromkeys(variant_ids):
+        variant = db.get(ProductVariant, variant_id)
+        if variant is not None:
+            out.append(
+                {
+                    "id": str(variant.id),
+                    "stock_qty": variant.stock_qty,
+                    "change_seq": variant.change_seq,
+                }
+            )
+    return out

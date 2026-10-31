@@ -1,5 +1,4 @@
 // Command types and payloads the device can push (SPEC section 8, apps/api/app/schemas.py).
-// Only the stock commands exist so far; the others arrive with their milestones.
 
 export const SCHEMA_VERSION = 1
 
@@ -24,12 +23,76 @@ export interface AdjustPayload {
   note: string
 }
 
-export type CommandType = 'stock.purchase' | 'stock.damage' | 'stock.adjust'
+export interface CustomerPayload {
+  customer_id: string
+  name: string
+  shop_name: string | null
+  phone: string | null
+  area: string | null
+  address: string | null
+  notes: string | null
+  /** Only taken when the customer is created. */
+  opening_balance: number
+  is_active: boolean
+}
+
+export type PaymentMethod = 'cash' | 'transfer' | 'cheque'
+
+export interface InvoiceCreatePayload {
+  invoice_id: string
+  number: string
+  customer_id: string
+  issued_at: string
+  discount: number
+  note: string | null
+  payment: {
+    payment_id: string
+    number: string
+    amount: number
+    method: PaymentMethod
+    note: string | null
+  } | null
+  lines: { line_id: string; variant_id: string; qty: number; unit_price: number }[]
+}
+
+export interface MarkDeliveredPayload {
+  invoice_id: string
+  delivered_at: string
+}
+
+/** The server ignores the last four fields: they let this device show the effect of the command
+ * (stock and balance) before the server has answered. */
+export interface CancelPayload {
+  invoice_id: string
+  cancelled_at: string
+  reason: string
+  void_payment: boolean
+  customer_id: string
+  /** The invoice total and the active payment linked to it, as this device knows them. */
+  total: number
+  payment_amount: number
+  lines: { variant_id: string; qty: number }[]
+}
+
+export type CommandType =
+  | 'stock.purchase'
+  | 'stock.damage'
+  | 'stock.adjust'
+  | 'customer.upsert'
+  | 'invoice.create'
+  | 'invoice.mark_delivered'
+  | 'invoice.cancel'
 
 export interface CommandResult {
   id: string
   status: 'applied' | 'rejected'
-  data?: { applied: number; variants: { id: string; stock_qty: number; change_seq: number }[] }
+  data?: {
+    applied?: number
+    variants?: { id: string; stock_qty: number; change_seq: number }[]
+    /** The customer's balance after the command, as the server worked it out. */
+    customer_id?: string
+    customer_balance?: number
+  }
   warnings?: { code: string }[]
   error?: { code: string; message: string; details: Record<string, unknown> }
 }
@@ -47,13 +110,17 @@ export function commandVariantIds(type: string, payload: unknown): string[] {
     case 'stock.damage':
     case 'stock.adjust':
       return [(payload as DamagePayload | AdjustPayload).variant_id]
+    case 'invoice.create':
+      return (payload as InvoiceCreatePayload).lines.map((l) => l.variant_id)
+    case 'invoice.cancel':
+      return (payload as CancelPayload).lines.map((l) => l.variant_id)
     default:
       return []
   }
 }
 
 /** What a waiting command does to one variant, for the movement history: a signed quantity for a
- * stock-in or write-off, or the counted quantity for a count. */
+ * stock-in, sale or write-off, or the counted quantity for a count. */
 export function commandEffectOn(
   type: string,
   payload: unknown,
@@ -72,6 +139,18 @@ export function commandEffectOn(
   if (type === 'stock.adjust') {
     const p = payload as AdjustPayload
     return p.variant_id === variantId ? { type, qty: p.counted_qty, counted: true } : null
+  }
+  if (type === 'invoice.create') {
+    const qty = (payload as InvoiceCreatePayload).lines
+      .filter((l) => l.variant_id === variantId)
+      .reduce((sum, l) => sum + l.qty, 0)
+    return qty > 0 ? { type, qty: -qty, counted: false } : null
+  }
+  if (type === 'invoice.cancel') {
+    const qty = (payload as CancelPayload).lines
+      .filter((l) => l.variant_id === variantId)
+      .reduce((sum, l) => sum + l.qty, 0)
+    return qty > 0 ? { type, qty, counted: false } : null
   }
   return null
 }

@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, type ReactNode } from 'react'
 import { ar } from '../i18n/ar'
 
 interface Props {
@@ -9,6 +9,10 @@ interface Props {
   confirmLabel: string
   busy?: boolean
   error?: string | null
+  /** Extra content between the numbers and the buttons (a reason field, a question). */
+  children?: ReactNode
+  /** The confirm button stays off until the extra content is filled in. */
+  confirmDisabled?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -20,6 +24,8 @@ export function ConfirmSheet({
   confirmLabel,
   busy,
   error,
+  children,
+  confirmDisabled,
   onConfirm,
   onCancel,
 }: Props) {
@@ -53,6 +59,7 @@ export function ConfirmSheet({
             ))}
           </dl>
         )}
+        {children}
         {error && (
           <p role="alert" className="mb-3 font-bold text-red-700">
             <span aria-hidden="true">⚠ </span>
@@ -62,7 +69,7 @@ export function ConfirmSheet({
         <div className="flex gap-3">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || confirmDisabled}
             onClick={onConfirm}
             className="min-h-12 flex-1 rounded-xl bg-navy px-4 font-bold text-white disabled:opacity-50"
           >
