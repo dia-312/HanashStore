@@ -4,12 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, setMeta, wipeLocalData, type DbCustomer, type DbVariant } from '../db'
 import { ar } from '../i18n/ar'
 import { getCart, setLineQty } from '../lib/cart'
-import { confirmSale } from '../lib/sales'
+import { cancelInvoice, confirmSale } from '../lib/sales'
 import { pendingCommands } from '../lib/sync/outbox'
 import Checkout from './checkout/Checkout'
 import { EditCustomer, NewCustomer } from './customers/CustomerForm'
 import { CustomerProfile } from './customers/CustomerProfile'
 import { Customers } from './customers/Customers'
+import Statement from './customers/Statement'
 import InvoiceView from './invoices/InvoiceView'
 import Invoices from './invoices/Invoices'
 
@@ -384,7 +385,11 @@ describe('invoice screen', () => {
     const { invoiceId } = await sell(3000)
     renderApp(`/invoices/${invoiceId}`)
     expect(await screen.findByRole('heading', { name: 'INV-000001' })).toBeTruthy()
-    expect(screen.getAllByText('أرجيلة كبيرة').length).toBe(2)
+    // the share panel keeps an off-screen copy of the page (aria-hidden): only count what is shown
+    const shown = screen
+      .getAllByText('أرجيلة كبيرة')
+      .filter((node) => !node.closest('[aria-hidden="true"]'))
+    expect(shown.length).toBe(2)
     expect(screen.getByText(/-.*10\.00/)).toBeTruthy()
     expect(screen.getByText(ar.invoices.remaining).nextSibling?.textContent).toContain('70.00')
     expect(screen.getByText(/REC-000001/)).toBeTruthy()
@@ -454,6 +459,91 @@ describe('invoice screen', () => {
   it('a missing invoice says so', async () => {
     renderApp('/invoices/nope')
     expect(await screen.findByText(ar.invoices.notFound)).toBeTruthy()
+  })
+
+  it('an invoice the server has not received can only be sent as a picture, and says why', async () => {
+    const { invoiceId } = await sell(3000)
+    renderApp(`/invoices/${invoiceId}`)
+    expect(await screen.findByRole('button', { name: ar.share.preparePng })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: ar.share.preparePdf })).toBeNull()
+    expect(screen.getByText(ar.share.pdfNeedsServer)).toBeTruthy()
+  })
+
+  it('offers the PDF once the server has the invoice and the device is online', async () => {
+    const { invoiceId } = await sell(3000)
+    await db.outbox.clear() // as if it had been sent
+    await db.invoices.update(invoiceId, { change_seq: 7 })
+    Object.defineProperty(navigator, 'onLine', { value: true, configurable: true })
+    renderApp(`/invoices/${invoiceId}`)
+    expect(await screen.findByRole('button', { name: ar.share.preparePdf })).toBeTruthy()
+  })
+})
+
+describe('statement screen', () => {
+  const statementApp = (path = '/customers/c-1/statement') => {
+    const view = render(
+      <MemoryRouter initialEntries={[path]}>
+        <Routes>
+          <Route path="customers/:customerId/statement" element={<Statement />} />
+          <Route path="customers/:customerId" element={<p>الملف</p>} />
+        </Routes>
+      </MemoryRouter>,
+    )
+    return view
+  }
+
+  const sale = () =>
+    confirmSale({
+      customerId: 'c-1',
+      lines: [{ variantId: 'v1', qty: 2 }],
+      discount: 0,
+      paid: 3000,
+      method: 'cash',
+    })
+
+  it('lists the opening balance, the invoice and the payment, ending on the balance he owes', async () => {
+    await sale() // 90.00 invoice, 30.00 paid: he owes 150 + 60
+    statementApp()
+    expect(await screen.findByText(ar.statement.title, { exact: false })).toBeTruthy()
+    const table = await screen.findByRole('table')
+    expect(within(table).getByText(/INV-000001/)).toBeTruthy()
+    expect(within(table).getByText(/REC-000001/)).toBeTruthy()
+    const closing = screen.getAllByText(ar.statement.closing)[0]!.parentElement!
+    expect(closing.textContent).toContain('210.00')
+  })
+
+  it('hides a cancelled invoice and its rows until asked', async () => {
+    const { invoiceId } = await sale()
+    await cancelInvoice(invoiceId, 'خطأ', true)
+    statementApp()
+    await screen.findByRole('table')
+    await waitFor(() =>
+      expect(within(screen.getByRole('table')).queryByText(/INV-000001/)).toBeNull(),
+    )
+    expect(screen.getAllByText(ar.statement.closing)[0]!.parentElement!.textContent).toContain(
+      '150.00',
+    )
+    fireEvent.click(screen.getByLabelText(ar.statement.showOff))
+    await waitFor(() =>
+      expect(within(screen.getByRole('table')).getByText(/INV-000001/)).toBeTruthy(),
+    )
+  })
+
+  it('an unknown customer says so, and a bad period shows no table', async () => {
+    statementApp('/customers/nope/statement')
+    expect(await screen.findByText(ar.customers.notFound)).toBeTruthy()
+    cleanup()
+    statementApp()
+    const from = (await screen.findByLabelText(ar.statement.from)) as HTMLInputElement
+    fireEvent.change(from, { target: { value: '2999-01-01' } })
+    await waitFor(() => expect(screen.queryByRole('table')).toBeNull())
+  })
+
+  it('a customer still waiting to reach the server gets the picture only', async () => {
+    await sale() // c-1 has queued commands
+    statementApp()
+    expect(await screen.findByRole('button', { name: ar.share.preparePng })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: ar.share.preparePdf })).toBeNull()
   })
 })
 

@@ -204,6 +204,8 @@ export interface InvoiceDetail extends InvoiceItem {
   /** The rep may still cancel it: confirmed, nothing waiting to cancel it. */
   canCancel: boolean
   hasActivePayment: boolean
+  /** A cancellation is waiting to be sent: the server's PDF would not show it yet. */
+  cancelPending: boolean
 }
 
 export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): InvoiceDetail | null {
@@ -240,6 +242,7 @@ export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): Invoice
     rejectedCode: rejected?.error?.code ?? null,
     canCancel: item.status === 'confirmed' && item.sendState !== 'rejected',
     hasActivePayment: payments.some((p) => p.status === 'active') && !e.cancelled.has(inv.id),
+    cancelPending: e.cancelled.has(inv.id),
   }
 }
 

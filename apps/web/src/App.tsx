@@ -26,6 +26,7 @@ const Stock = lazy(() => import('./screens/stock/Stock'))
 const Categories = lazy(() => import('./screens/settings/Categories'))
 const ImportProducts = lazy(() => import('./screens/settings/ImportProducts'))
 const SyncScreen = lazy(() => import('./screens/Sync'))
+const Statement = lazy(() => import('./screens/customers/Statement'))
 const BusinessSettings = lazy(() => import('./screens/settings/Business'))
 const Invoices = lazy(() => import('./screens/invoices/Invoices'))
 
@@ -79,6 +80,7 @@ export function App() {
               <Route path="customers" element={<Customers />} />
               <Route path="customers/new" element={<NewCustomer />} />
               <Route path="customers/:customerId" element={<CustomerProfile />} />
+              <Route path="customers/:customerId/statement" element={lazyPage(<Statement />)} />
               <Route path="customers/:customerId/edit" element={<EditCustomer />} />
               <Route path="checkout/:customerId?" element={<Checkout />} />
               <Route path="invoices" element={lazyPage(<Invoices />)} />

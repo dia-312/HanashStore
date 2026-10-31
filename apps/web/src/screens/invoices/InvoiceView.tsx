@@ -1,13 +1,18 @@
-import { useState } from 'react'
+import { Suspense, lazy, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { InvoiceTags } from '../../components/InvoiceRow'
 import { ar, fill } from '../../i18n/ar'
 import { formatDateTime } from '../../lib/date'
+import { invoiceDocument } from '../../lib/documents'
 import { buildInvoiceDetail, loadSalesSnapshot } from '../../lib/localSales'
+import { loadSettings } from '../../lib/settings'
 import { formatMoney } from '../../lib/money'
 import { cancelInvoice, markDelivered } from '../../lib/sales'
 import { useLive } from '../../lib/useLive'
+
+// The pictures and the sharing code load only when this screen opens (SPEC section 17).
+const SharePanel = lazy(() => import('../../documents/SharePanel'))
 
 const button = 'min-h-12 rounded-xl border-2 border-navy/30 bg-white px-5 font-bold'
 
@@ -18,6 +23,10 @@ export default function InvoiceView() {
     async () => buildInvoiceDetail(await loadSalesSnapshot(), invoiceId),
     [invoiceId],
   )
+  const document = useLive(async () => {
+    const [snapshot, settings] = await Promise.all([loadSalesSnapshot(), loadSettings()])
+    return invoiceDocument(snapshot, invoiceId, settings)
+  }, [invoiceId])
   const [cancelling, setCancelling] = useState(false)
   const [reason, setReason] = useState('')
   const [voidPayment, setVoidPayment] = useState<boolean | null>(null)
@@ -168,6 +177,22 @@ export default function InvoiceView() {
             ))}
           </ul>
         </div>
+      )}
+
+      {document && (
+        <Suspense fallback={<p>{ar.common.loading}</p>}>
+          <SharePanel
+            doc={{ type: 'invoice', data: document }}
+            fileBase={invoice.number}
+            // The server renders the PDF only for an invoice it has, with nothing waiting to change it.
+            pdfPath={
+              invoice.sendState === 'synced' && !invoice.cancelPending
+                ? `/invoices/${invoice.id}/pdf`
+                : null
+            }
+            pdfBlocked={ar.share.pdfNeedsServer}
+          />
+        </Suspense>
       )}
 
       {invoice.status === 'confirmed' && (
