@@ -231,3 +231,16 @@ describe('presentation mode (customer-safe)', () => {
     expect(await screen.findByRole('button', { name: /أرجيلة كبيرة/ })).toBeTruthy()
   })
 })
+
+describe('the out-of-stock switch from Settings', () => {
+  it('shows an out-of-stock variant, marked unavailable and with nothing to add, when the switch is off', async () => {
+    await db.settings.put({ key: 'hide_out_of_stock_in_presentation', value: false })
+    renderPresent()
+    await openProduct()
+    const gold = (await screen.findByText(/ذهبي/)).closest('li')!
+    expect(within(gold).getByText(ar.present.unavailable)).toBeTruthy()
+    expect(
+      within(gold).getByRole('button', { name: ar.present.add }).hasAttribute('disabled'),
+    ).toBe(true)
+  })
+})

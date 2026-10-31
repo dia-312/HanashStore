@@ -14,14 +14,12 @@ import {
   type PresentProduct,
   type PresentVariant,
 } from '../../lib/presentation'
+import { useSettings } from '../../lib/settings'
 import { useLive } from '../../lib/useLive'
 
 // Presentation mode (SPEC section 10): a customer-safe catalog the rep hands over. It shows
 // products and prices only; the customer fills his own cart; only the rep, with the PIN, leaves or
 // checks out. Nothing here reads a balance, an invoice, another customer or the sync state.
-
-// The setting that shows out-of-stock items arrives with Settings (M9): hidden for now.
-const HIDE_OUT_OF_STOCK = true
 
 const ALL = 'all'
 const big = 'min-h-14 min-w-14 rounded-xl border-2 border-navy/30 bg-white text-2xl font-bold'
@@ -106,6 +104,9 @@ export default function Present() {
   const navigate = useNavigate()
   const customerKey = customerId ?? null
   const snapshot = useLive(loadSnapshot, [])
+  const settings = useSettings()
+  // Hidden unless the rep changed it in Settings, and while the setting is still being read.
+  const hideOutOfStock = settings?.hide_out_of_stock_in_presentation ?? true
   const cart = useLive(async () => (await getCart(customerKey)) ?? null, [customerKey])
   const customer = useLive(
     async () => (customerKey ? ((await db.customers.get(customerKey)) ?? null) : null),
@@ -120,9 +121,8 @@ export default function Present() {
   const [gate, setGate] = useState<'exit' | 'done' | null>(null)
 
   const catalog = useMemo(
-    () =>
-      snapshot ? buildPresentCatalog(snapshot, { q, hideOutOfStock: HIDE_OUT_OF_STOCK }) : null,
-    [snapshot, q],
+    () => (snapshot ? buildPresentCatalog(snapshot, { q, hideOutOfStock }) : null),
+    [snapshot, q, hideOutOfStock],
   )
 
   // Everything in the cart, with names and prices, read from the device (a variant that has since

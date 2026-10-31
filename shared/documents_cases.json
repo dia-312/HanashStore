@@ -1,0 +1,175 @@
+{
+  "_comment": "One scenario used by the server and the device tests: raw rows in, document models out. Names and numbers are made up. Hebron is UTC+3 in July and UTC+2 in November.",
+  "settings": {
+    "business_name": "شركة النور",
+    "phone": "0568123456",
+    "invoice_footer": "شكراً لتعاملكم",
+    "logo_url": null
+  },
+  "customer": {
+    "id": "0192aaaa-0000-7000-8000-000000000001",
+    "name": "أحمد",
+    "shop_name": "بقالة الأمل",
+    "phone": "0599123456",
+    "opening_balance": 5000
+  },
+  "invoices": [
+    {
+      "id": "0192bbbb-0000-7000-8000-000000000001",
+      "number": "INV-000001",
+      "status": "confirmed",
+      "subtotal": 11000,
+      "discount": 1000,
+      "total": 10000,
+      "note": null,
+      "cancel_reason": null,
+      "issued_at": "2026-07-10T09:30:00Z",
+      "lines": [
+        { "product_name": "أرجيلة كبيرة", "variant_label": "أسود", "qty": 2, "unit_price": 4500, "line_total": 9000, "discount_share": 818 },
+        { "product_name": "فحم طبيعي", "variant_label": "علبة", "qty": 1, "unit_price": 2000, "line_total": 2000, "discount_share": 182 }
+      ],
+      "payments": [
+        { "id": "0192cccc-0000-7000-8000-000000000001", "number": "REC-000001", "method": "cash", "amount": 3000, "paid_at": "2026-07-10T09:30:00Z", "status": "active" }
+      ]
+    },
+    {
+      "id": "0192bbbb-0000-7000-8000-000000000002",
+      "number": "INV-000002",
+      "status": "confirmed",
+      "subtotal": 4500,
+      "discount": 0,
+      "total": 4500,
+      "note": "ملاحظة تجريبية",
+      "cancel_reason": null,
+      "issued_at": "2026-11-02T09:14:20Z",
+      "lines": [
+        { "product_name": "فوهة زجاج", "variant_label": "", "qty": 3, "unit_price": 1500, "line_total": 4500, "discount_share": 0 }
+      ],
+      "payments": [
+        { "id": "0192cccc-0000-7000-8000-000000000002", "number": "REC-000002", "method": "transfer", "amount": 4500, "paid_at": "2026-11-02T09:14:20Z", "status": "active" }
+      ]
+    },
+    {
+      "id": "0192bbbb-0000-7000-8000-000000000003",
+      "number": "INV-000003",
+      "status": "cancelled",
+      "subtotal": 1000,
+      "discount": 0,
+      "total": 1000,
+      "note": null,
+      "cancel_reason": "خطأ بالكمية",
+      "issued_at": "2026-11-03T10:00:00Z",
+      "lines": [
+        { "product_name": "أرجيلة كبيرة", "variant_label": "أحمر", "qty": 1, "unit_price": 1000, "line_total": 1000, "discount_share": 0 }
+      ],
+      "payments": [
+        { "id": "0192cccc-0000-7000-8000-000000000003", "number": "REC-000003", "method": "cash", "amount": 1000, "paid_at": "2026-11-03T10:00:00Z", "status": "voided" }
+      ]
+    }
+  ],
+  "standalone_payments": [
+    { "id": "0192cccc-0000-7000-8000-000000000004", "number": "REC-000004", "method": "cash", "amount": 2000, "paid_at": "2026-11-05T08:00:00Z", "status": "active" }
+  ],
+  "expected_invoices": {
+    "INV-000001": {
+      "business": { "name": "شركة النور", "phone": "0568123456", "footer": "شكراً لتعاملكم", "logo_url": null },
+      "number": "INV-000001",
+      "issued_at": "10/07/2026 12:30",
+      "cancelled": false,
+      "cancel_reason": null,
+      "customer": { "name": "أحمد", "shop_name": "بقالة الأمل", "phone": "0599123456" },
+      "lines": [
+        { "n": 1, "product": "أرجيلة كبيرة", "variant": "أسود", "qty": 2, "unit_price": "₪ 45.00", "line_total": "₪ 90.00" },
+        { "n": 2, "product": "فحم طبيعي", "variant": "علبة", "qty": 1, "unit_price": "₪ 20.00", "line_total": "₪ 20.00" }
+      ],
+      "totals": { "subtotal": "₪ 110.00", "discount": "₪ 10.00", "total": "₪ 100.00", "paid": "₪ 30.00", "remaining": "₪ 70.00" },
+      "note": null
+    },
+    "INV-000002": {
+      "business": { "name": "شركة النور", "phone": "0568123456", "footer": "شكراً لتعاملكم", "logo_url": null },
+      "number": "INV-000002",
+      "issued_at": "02/11/2026 11:14",
+      "cancelled": false,
+      "cancel_reason": null,
+      "customer": { "name": "أحمد", "shop_name": "بقالة الأمل", "phone": "0599123456" },
+      "lines": [
+        { "n": 1, "product": "فوهة زجاج", "variant": "", "qty": 3, "unit_price": "₪ 15.00", "line_total": "₪ 45.00" }
+      ],
+      "totals": { "subtotal": "₪ 45.00", "discount": null, "total": "₪ 45.00", "paid": "₪ 45.00", "remaining": "₪ 0.00" },
+      "note": "ملاحظة تجريبية"
+    },
+    "INV-000003": {
+      "business": { "name": "شركة النور", "phone": "0568123456", "footer": "شكراً لتعاملكم", "logo_url": null },
+      "number": "INV-000003",
+      "issued_at": "03/11/2026 12:00",
+      "cancelled": true,
+      "cancel_reason": "خطأ بالكمية",
+      "customer": { "name": "أحمد", "shop_name": "بقالة الأمل", "phone": "0599123456" },
+      "lines": [
+        { "n": 1, "product": "أرجيلة كبيرة", "variant": "أحمر", "qty": 1, "unit_price": "₪ 10.00", "line_total": "₪ 10.00" }
+      ],
+      "totals": { "subtotal": "₪ 10.00", "discount": null, "total": "₪ 10.00", "paid": "₪ 0.00", "remaining": "₪ 10.00" },
+      "note": null
+    }
+  },
+  "statements": [
+    {
+      "name": "November, cancelled and voided hidden: the balance carried in is what he owed on 1 November",
+      "from": "2026-11-01",
+      "to": "2026-11-30",
+      "include_off": false,
+      "expected": {
+        "business": { "name": "شركة النور", "phone": "0568123456", "footer": "شكراً لتعاملكم", "logo_url": null },
+        "customer": { "name": "أحمد", "shop_name": "بقالة الأمل", "phone": "0599123456" },
+        "period": { "from": "01/11/2026", "to": "30/11/2026" },
+        "rows": [
+          { "date": "01/11/2026", "label": "رصيد سابق", "number": null, "debit": null, "credit": null, "balance": "₪ 120.00", "css": "opening" },
+          { "date": "02/11/2026", "label": "فاتورة", "number": "INV-000002", "debit": "₪ 45.00", "credit": null, "balance": "₪ 165.00", "css": "" },
+          { "date": "02/11/2026", "label": "دفعة", "number": "REC-000002", "debit": null, "credit": "₪ 45.00", "balance": "₪ 120.00", "css": "" },
+          { "date": "05/11/2026", "label": "دفعة", "number": "REC-000004", "debit": null, "credit": "₪ 20.00", "balance": "₪ 100.00", "css": "" }
+        ],
+        "totals": { "debit": "₪ 45.00", "credit": "₪ 65.00", "closing": "₪ 100.00" }
+      }
+    },
+    {
+      "name": "November with the cancelled invoice and the voided payment shown: they never move the balance",
+      "from": "2026-11-01",
+      "to": "2026-11-30",
+      "include_off": true,
+      "expected": {
+        "business": { "name": "شركة النور", "phone": "0568123456", "footer": "شكراً لتعاملكم", "logo_url": null },
+        "customer": { "name": "أحمد", "shop_name": "بقالة الأمل", "phone": "0599123456" },
+        "period": { "from": "01/11/2026", "to": "30/11/2026" },
+        "rows": [
+          { "date": "01/11/2026", "label": "رصيد سابق", "number": null, "debit": null, "credit": null, "balance": "₪ 120.00", "css": "opening" },
+          { "date": "02/11/2026", "label": "فاتورة", "number": "INV-000002", "debit": "₪ 45.00", "credit": null, "balance": "₪ 165.00", "css": "" },
+          { "date": "02/11/2026", "label": "دفعة", "number": "REC-000002", "debit": null, "credit": "₪ 45.00", "balance": "₪ 120.00", "css": "" },
+          { "date": "03/11/2026", "label": "فاتورة ملغاة", "number": "INV-000003", "debit": "₪ 10.00", "credit": null, "balance": "₪ 120.00", "css": "off" },
+          { "date": "03/11/2026", "label": "دفعة ملغاة", "number": "REC-000003", "debit": null, "credit": "₪ 10.00", "balance": "₪ 120.00", "css": "off" },
+          { "date": "05/11/2026", "label": "دفعة", "number": "REC-000004", "debit": null, "credit": "₪ 20.00", "balance": "₪ 100.00", "css": "" }
+        ],
+        "totals": { "debit": "₪ 45.00", "credit": "₪ 65.00", "closing": "₪ 100.00" }
+      }
+    },
+    {
+      "name": "The whole year: the balance carried in is just his opening balance",
+      "from": "2026-01-01",
+      "to": "2026-12-31",
+      "include_off": false,
+      "expected": {
+        "business": { "name": "شركة النور", "phone": "0568123456", "footer": "شكراً لتعاملكم", "logo_url": null },
+        "customer": { "name": "أحمد", "shop_name": "بقالة الأمل", "phone": "0599123456" },
+        "period": { "from": "01/01/2026", "to": "31/12/2026" },
+        "rows": [
+          { "date": "01/01/2026", "label": "رصيد سابق", "number": null, "debit": null, "credit": null, "balance": "₪ 50.00", "css": "opening" },
+          { "date": "10/07/2026", "label": "فاتورة", "number": "INV-000001", "debit": "₪ 100.00", "credit": null, "balance": "₪ 150.00", "css": "" },
+          { "date": "10/07/2026", "label": "دفعة", "number": "REC-000001", "debit": null, "credit": "₪ 30.00", "balance": "₪ 120.00", "css": "" },
+          { "date": "02/11/2026", "label": "فاتورة", "number": "INV-000002", "debit": "₪ 45.00", "credit": null, "balance": "₪ 165.00", "css": "" },
+          { "date": "02/11/2026", "label": "دفعة", "number": "REC-000002", "debit": null, "credit": "₪ 45.00", "balance": "₪ 120.00", "css": "" },
+          { "date": "05/11/2026", "label": "دفعة", "number": "REC-000004", "debit": null, "credit": "₪ 20.00", "balance": "₪ 100.00", "css": "" }
+        ],
+        "totals": { "debit": "₪ 145.00", "credit": "₪ 95.00", "closing": "₪ 100.00" }
+      }
+    }
+  ]
+}

@@ -1,0 +1,47 @@
+/* Shared by the Jinja2 templates (WeasyPrint PDF) and the React components (html-to-image PNG), so
+   an invoice or statement looks the same either way (SPEC section 11). Font faces are declared
+   separately on each side because the font URL differs. Colours are the app palette. */
+.doc {
+  direction: rtl;
+  font-family: "Plex Arabic", sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #14213d;
+}
+.doc bdi { unicode-bidi: isolate; }
+.doc table { width: 100%; border-collapse: collapse; }
+.doc .muted { color: #5b6478; }
+
+.doc .head td { vertical-align: top; padding: 0; }
+.doc .head .meta { text-align: end; }
+.doc .head .logo { max-height: 56px; max-width: 160px; margin-bottom: 6px; }
+.doc .biz-name { font-size: 22px; font-weight: 700; }
+.doc .title { font-size: 20px; font-weight: 700; color: #f28c28; }
+
+.doc .stamp {
+  display: inline-block; margin-top: 4px; padding: 2px 14px;
+  border: 2px solid #b91c1c; border-radius: 6px; color: #b91c1c; font-weight: 700;
+}
+.doc .cancel-reason { color: #b91c1c; font-size: 12px; }
+
+.doc .cust { margin: 18px 0 14px; padding: 10px 14px; background: #f6f3ec; border-radius: 8px; }
+.doc .cust .name { font-weight: 700; }
+
+.doc .lines th {
+  background: #14213d; color: #fff; font-weight: 700;
+  padding: 8px 10px; text-align: start;
+}
+.doc .lines td { padding: 8px 10px; border-bottom: 1px solid #d9d4c7; vertical-align: top; }
+.doc .lines .num { text-align: end; white-space: nowrap; }
+.doc .lines .sub { font-size: 11px; color: #5b6478; }
+.doc .lines tr.off td { color: #8a8f9c; text-decoration: line-through; }
+.doc .lines tr.opening td { background: #f6f3ec; font-weight: 700; }
+
+.doc .totals { width: 55%; margin-inline-start: auto; margin-top: 14px; }
+.doc .totals td { padding: 5px 10px; }
+.doc .totals td:last-child { text-align: end; white-space: nowrap; }
+.doc .totals .grand td { font-weight: 700; font-size: 17px; border-top: 2px solid #14213d; }
+.doc .totals .remain td { font-weight: 700; color: #f28c28; }
+
+.doc .note { margin-top: 18px; padding: 10px 14px; border: 1px dashed #3fa7d6; border-radius: 8px; }
+.doc .footer { margin-top: 26px; text-align: center; color: #5b6478; font-size: 12px; }

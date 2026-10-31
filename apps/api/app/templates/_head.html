@@ -1,0 +1,6 @@
+{# Business header shared by the invoice and the statement. `logo_src` is a file path for the PDF. #}
+<td class="biz">
+  {% if logo_src %}<img class="logo" src="{{ logo_src }}" alt="">{% endif %}
+  <div class="biz-name">{{ doc.business.name }}</div>
+  {% if doc.business.phone %}<div class="muted">{{ L.phone }}: <bdi dir="ltr">{{ doc.business.phone }}</bdi></div>{% endif %}
+</td>

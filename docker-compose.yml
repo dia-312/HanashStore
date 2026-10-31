@@ -22,6 +22,8 @@ services:
       MEDIA_DIR: /data/media
     volumes:
       - media:/data/media # product images: written here, served by caddy
+      - ./apps/web/public/fonts:/app/fonts:ro # the font the PDF embeds
+      - ./shared:/app/shared:ro # the stylesheet and labels the PDF shares with the app
     depends_on:
       postgres:
         condition: service_healthy

@@ -96,6 +96,9 @@ export function CustomerProfile() {
               </a>
             </>
           )}
+          <Link to={`/customers/${customer.id}/statement`} className={action}>
+            {ar.statement.open}
+          </Link>
           <Link to={`/customers/${customer.id}/edit`} className={action}>
             {ar.customers.edit}
           </Link>

@@ -128,14 +128,14 @@ export interface InvoiceFilter {
   to?: string
 }
 
-interface Effects {
+export interface Effects {
   cancelled: Map<string, { voidPayment: boolean }>
   delivered: Map<string, string>
   creation: Map<string, SendState>
 }
 
 /** What waiting commands say about each invoice: cancelled, delivered, and not yet confirmed. */
-function effects(s: SalesSnapshot): Effects {
+export function saleEffects(s: SalesSnapshot): Effects {
   const out: Effects = { cancelled: new Map(), delivered: new Map(), creation: new Map() }
   for (const c of s.outbox) {
     const state: SendState = c.status === 'rejected' ? 'rejected' : 'pending'
@@ -160,7 +160,7 @@ function paidOn(s: SalesSnapshot, e: Effects, invoiceId: string): number {
 }
 
 export function buildInvoiceList(s: SalesSnapshot, filter: InvoiceFilter = {}): InvoiceItem[] {
-  const e = effects(s)
+  const e = saleEffects(s)
   const names = new Map(s.customers.map((c) => [c.id, c.name]))
   const items: InvoiceItem[] = []
   for (const inv of s.invoices) {
@@ -204,12 +204,14 @@ export interface InvoiceDetail extends InvoiceItem {
   /** The rep may still cancel it: confirmed, nothing waiting to cancel it. */
   canCancel: boolean
   hasActivePayment: boolean
+  /** A cancellation is waiting to be sent: the server's PDF would not show it yet. */
+  cancelPending: boolean
 }
 
 export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): InvoiceDetail | null {
   const inv = s.invoices.find((i) => i.id === invoiceId)
   if (!inv) return null
-  const e = effects(s)
+  const e = saleEffects(s)
   const [item] = buildInvoiceList({ ...s, invoices: [inv] })
   if (!item) return null
   const rejected = s.outbox.find(
@@ -240,6 +242,7 @@ export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): Invoice
     rejectedCode: rejected?.error?.code ?? null,
     canCancel: item.status === 'confirmed' && item.sendState !== 'rejected',
     hasActivePayment: payments.some((p) => p.status === 'active') && !e.cancelled.has(inv.id),
+    cancelPending: e.cancelled.has(inv.id),
   }
 }
 

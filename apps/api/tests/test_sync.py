@@ -8,6 +8,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.models import AuditLog, ProcessedCommand, StockMovement
+from app.services import settings
 from app.services import sync as sync_service
 from tests import helpers
 from tests.conftest import new_client
@@ -49,6 +50,7 @@ def test_pull_on_an_empty_server(api: TestClient) -> None:
         },
         "cursor": 0,
         "has_more": False,
+        "settings": settings.DEFAULTS,
     }
 
 
