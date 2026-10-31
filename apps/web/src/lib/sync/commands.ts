@@ -74,6 +74,25 @@ export interface CancelPayload {
   lines: { variant_id: string; qty: number }[]
 }
 
+export interface PaymentCreatePayload {
+  payment_id: string
+  number: string
+  customer_id: string
+  paid_at: string
+  amount: number
+  method: PaymentMethod
+  note: string | null
+}
+
+/** The server ignores `customer_id` and `amount`: they let this device show the new balance at once. */
+export interface PaymentVoidPayload {
+  payment_id: string
+  voided_at: string
+  reason: string
+  customer_id: string
+  amount: number
+}
+
 export type CommandType =
   | 'stock.purchase'
   | 'stock.damage'
@@ -82,6 +101,8 @@ export type CommandType =
   | 'invoice.create'
   | 'invoice.mark_delivered'
   | 'invoice.cancel'
+  | 'payment.create'
+  | 'payment.void'
 
 export interface CommandResult {
   id: string

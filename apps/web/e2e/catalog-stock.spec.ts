@@ -613,6 +613,60 @@ test('M5: business details, the invoice PDF online, its picture offline, and the
   expect((await statementPdf.body()).subarray(0, 5).toString()).toBe('%PDF-')
 })
 
+test('M6: a payment with no invoice offline, sent on reconnect, then voided', async () => {
+  await page.context().setOffline(true)
+  await goTo(ar.nav.customers)
+  await page
+    .getByRole('link', { name: /محل الاختبار/ })
+    .first()
+    .click()
+  await page.getByRole('link', { name: ar.payment.open }).click()
+  await page.getByLabel(ar.payment.amount).fill('50')
+  await expect(page.getByText(/111\.00/).first()).toBeVisible() // 161.00 owed before, 50 paid
+  await page.getByRole('button', { name: ar.payment.confirm }).click()
+  await page.getByRole('dialog').getByRole('button', { name: ar.payment.confirm }).click()
+
+  // on the profile at once, marked as not sent, with the balance already changed
+  await expect(page.getByText(ar.payment.unsent)).toBeVisible()
+  await expect(page.getByText(ar.payment.standalone)).toBeVisible()
+  await expect(page.getByText(/عليه ₪ 111\.00/).first()).toBeVisible()
+  expect((await pulled()).changes.payments).toHaveLength(1) // the server has heard nothing
+
+  await page.context().setOffline(false)
+  await expect
+    .poll(async () => (await pulled()).changes.payments.length, { timeout: 60_000 })
+    .toBe(2)
+  const afterPay = await pulled()
+  const standalone = afterPay.changes.payments.find((p) => p.invoice_id === null)
+  expect(standalone).toMatchObject({ amount: 5000, method: 'cash', status: 'active' })
+  expect(afterPay.changes.customers.find((c) => c.name === 'محل الاختبار')?.balance).toBe(11100)
+  await expect(page.getByText(ar.payment.unsent)).toHaveCount(0, { timeout: 60_000 })
+
+  // void it with a reason: it stays on record, marked, and the balance goes back
+  await page.getByRole('button', { name: ar.payment.voidAction }).first().click()
+  const sheet = page.getByRole('dialog')
+  await sheet.getByLabel(ar.payment.voidReason).fill('كتبتها بالغلط')
+  await sheet.getByRole('button', { name: ar.payment.voidConfirm }).click()
+  await expect(page.getByText(ar.payment.voided).first()).toBeVisible()
+  await expect(page.getByText(/عليه ₪ 161\.00/).first()).toBeVisible()
+  await expect
+    .poll(
+      async () => (await pulled()).changes.payments.find((p) => p.invoice_id === null)?.status,
+      { timeout: 60_000 },
+    )
+    .toBe('voided')
+  const afterVoid = await pulled()
+  expect(afterVoid.changes.customers.find((c) => c.name === 'محل الاختبار')?.balance).toBe(16100)
+
+  // the statement ends on the same balance, and shows the voided payment only when asked
+  await page.getByRole('link', { name: ar.statement.open }).click()
+  await expect(page.getByText(ar.statement.closing).first().locator('..')).toContainText('161.00')
+  await expect(page.getByRole('table').getByText(/REC-000002/)).toHaveCount(0)
+  await page.getByLabel(ar.statement.showOff).check()
+  await expect(page.getByRole('table').getByText(/REC-000002/)).toBeVisible()
+  await expect(page.getByText(ar.statement.closing).first().locator('..')).toContainText('161.00')
+})
+
 test('mark the invoice delivered, then cancel it giving the payment back', async () => {
   await goTo(ar.nav.invoices)
   await page

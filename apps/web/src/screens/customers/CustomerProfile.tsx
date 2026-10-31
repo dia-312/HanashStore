@@ -6,9 +6,10 @@ import { InvoiceRow } from '../../components/InvoiceRow'
 import { Tag } from '../../components/Tag'
 import { ar, fill } from '../../i18n/ar'
 import { formatDateTime } from '../../lib/date'
-import { buildCustomerProfile, loadSalesSnapshot } from '../../lib/localSales'
+import { buildCustomerProfile, loadSalesSnapshot, type PaymentItem } from '../../lib/localSales'
 import { telUrl, whatsappUrl } from '../../lib/phone'
-import { saveCustomer } from '../../lib/sales'
+import { formatMoney } from '../../lib/money'
+import { saveCustomer, voidPayment } from '../../lib/sales'
 import { useLive } from '../../lib/useLive'
 
 const action =
@@ -22,6 +23,8 @@ export function CustomerProfile() {
     [customerId],
   )
   const [stopping, setStopping] = useState(false)
+  const [voiding, setVoiding] = useState<PaymentItem | null>(null)
+  const [reason, setReason] = useState('')
 
   if (customer === undefined) return <p aria-busy="true">{ar.common.loading}</p>
   if (customer === null) return <p className="text-lg font-bold">{ar.customers.notFound}</p>
@@ -96,6 +99,9 @@ export function CustomerProfile() {
               </a>
             </>
           )}
+          <Link to={`/customers/${customer.id}/payment`} className={action}>
+            {ar.payment.open}
+          </Link>
           <Link to={`/customers/${customer.id}/statement`} className={action}>
             {ar.statement.open}
           </Link>
@@ -131,6 +137,83 @@ export function CustomerProfile() {
           </ul>
         )}
       </div>
+
+      <div>
+        <h3 className="mb-2 text-lg font-bold">{ar.payment.list}</h3>
+        {customer.payments.length === 0 ? (
+          <p className="opacity-70">{ar.payment.none}</p>
+        ) : (
+          <ul className="grid gap-2">
+            {customer.payments.map((p) => (
+              <li key={p.id} className="grid gap-1 rounded-xl bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className={`font-bold ${p.status === 'voided' ? 'line-through' : ''}`}>
+                    <bdi>{p.number}</bdi> · <bdi>{formatMoney(p.amount)}</bdi>
+                  </span>
+                  <span className="flex flex-wrap gap-2">
+                    {p.status === 'voided' && <Tag kind="bad">{ar.payment.voided}</Tag>}
+                    {p.voidPending && <Tag kind="wait">{ar.payment.voidWaiting}</Tag>}
+                    {p.sendState === 'pending' && <Tag kind="wait">{ar.payment.unsent}</Tag>}
+                    {p.sendState === 'rejected' && <Tag kind="bad">{ar.payment.refused}</Tag>}
+                  </span>
+                </div>
+                <p className="text-sm opacity-80">
+                  {ar.invoices.method[p.method]} · <bdi>{formatDateTime(p.paid_at)}</bdi> ·{' '}
+                  {p.invoice_number
+                    ? fill(ar.payment.withInvoice, { number: p.invoice_number })
+                    : ar.payment.standalone}
+                </p>
+                {p.note && <p className="text-sm">{p.note}</p>}
+                {p.status === 'voided' && p.void_reason && (
+                  <p className="text-sm">
+                    {fill(ar.payment.voidedBecause, { reason: p.void_reason })}
+                  </p>
+                )}
+                {p.canVoid && (
+                  <button
+                    type="button"
+                    className="min-h-11 w-fit rounded-xl border-2 border-navy/30 bg-white px-4 font-bold"
+                    onClick={() => setVoiding(p)}
+                  >
+                    {ar.payment.voidAction}
+                  </button>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {voiding && (
+        <ConfirmSheet
+          title={fill(ar.payment.voidTitle, { number: voiding.number })}
+          message={ar.payment.voidMessage}
+          lines={[{ label: ar.payment.amount, value: formatMoney(voiding.amount) }]}
+          confirmLabel={ar.payment.voidConfirm}
+          confirmDisabled={reason.trim() === ''}
+          onCancel={() => {
+            setVoiding(null)
+            setReason('')
+          }}
+          onConfirm={() => {
+            void voidPayment(voiding.id, reason).then(() => {
+              setVoiding(null)
+              setReason('')
+            })
+          }}
+        >
+          <label className="mb-3 grid gap-1">
+            <span className="font-bold">{ar.payment.voidReason}</span>
+            <input
+              className="min-h-12 rounded-xl border-2 border-navy/30 bg-white px-3"
+              aria-label={ar.payment.voidReason}
+              value={reason}
+              maxLength={500}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </label>
+        </ConfirmSheet>
+      )}
 
       {stopping && (
         <ConfirmSheet

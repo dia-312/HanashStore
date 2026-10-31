@@ -5,10 +5,14 @@ import { db, type OutboxRow } from '../db'
 import { ar, fill } from '../i18n/ar'
 import { formatDateTime } from '../lib/date'
 import { useLive } from '../lib/useLive'
+import { formatMoney } from '../lib/money'
 import {
   commandVariantIds,
   type AdjustPayload,
   type DamagePayload,
+  type InvoiceCreatePayload,
+  type PaymentCreatePayload,
+  type PaymentVoidPayload,
   type PurchasePayload,
 } from '../lib/sync/commands'
 import { syncNow, useSync } from '../lib/sync/engine'
@@ -34,7 +38,17 @@ function describe(command: OutboxRow, names: Names): string {
     const p = command.payload as AdjustPayload
     return `${name(p.variant_id)} → ${p.counted_qty}`
   }
-  return command.type
+  if (command.type === 'invoice.create') {
+    return (command.payload as InvoiceCreatePayload).number
+  }
+  if (command.type === 'payment.create') {
+    const p = command.payload as PaymentCreatePayload
+    return `${p.number} · ${formatMoney(p.amount)}`
+  }
+  if (command.type === 'payment.void') {
+    return formatMoney((command.payload as PaymentVoidPayload).amount)
+  }
+  return ''
 }
 
 const typeLabel = (type: string) => (ar.sync.commands as Record<string, string>)[type] ?? type
