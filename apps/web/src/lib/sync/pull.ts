@@ -27,6 +27,8 @@ export interface PullPage {
   }
   cursor: number
   has_more: boolean
+  /** Business settings: a few values, sent with every page. */
+  settings?: Record<string, unknown>
 }
 
 export const CURSOR_KEY = 'syncCursor'
@@ -66,6 +68,10 @@ export async function applyPage(page: PullPage): Promise<void> {
   await write(c.invoices, db.invoices as unknown as Table<DbInvoice, string>)
   await write(c.invoice_lines, db.invoice_lines as unknown as Table<DbInvoiceLine, string>)
   await write(c.payments, db.payments as unknown as Table<DbPayment, string>)
+  if (page.settings) {
+    const rows = Object.entries(page.settings).map(([key, value]) => ({ key, value }))
+    await db.settings.bulkPut(rows)
+  }
   await setMeta(CURSOR_KEY, page.cursor)
 }
 

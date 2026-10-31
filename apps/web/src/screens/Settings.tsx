@@ -101,6 +101,9 @@ export default function Settings() {
         >
           {ar.settings.redownload}
         </button>
+        <Link to="/settings/business" className={`${button} flex items-center`}>
+          {ar.settings.business}
+        </Link>
         <Link to="/settings/categories" className={`${button} flex items-center`}>
           {ar.settings.categories}
         </Link>

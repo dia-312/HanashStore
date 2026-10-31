@@ -121,6 +121,12 @@ export interface DbCart {
   updated_at: string
 }
 
+/** A business setting from the server (name, phone, footer, logo, presentation switch). */
+export interface DbSetting {
+  key: string
+  value: unknown
+}
+
 export interface CommandError {
   code: string
   message: string
@@ -152,6 +158,7 @@ export type SalesDb = Dexie & {
   invoice_lines: EntityTable<DbInvoiceLine, 'id'>
   payments: EntityTable<DbPayment, 'id'>
   carts: EntityTable<DbCart, 'id'>
+  settings: EntityTable<DbSetting, 'key'>
 }
 
 export const db = new Dexie('sales-rep') as SalesDb
@@ -180,6 +187,22 @@ db.version(3).stores({
   invoice_lines: 'id, invoice_id',
   payments: 'id, customer_id, invoice_id',
   carts: 'id',
+})
+
+// Version 4 (M5): the business settings, kept so the offline PNG has the name, phone and footer.
+db.version(4).stores({
+  meta: 'key',
+  categories: 'id',
+  products: 'id, category_id',
+  variants: 'id, product_id',
+  images: 'id, product_id',
+  outbox: '++seq, &id, status',
+  customers: 'id',
+  invoices: 'id, customer_id, status, issued_at',
+  invoice_lines: 'id, invoice_id',
+  payments: 'id, customer_id, invoice_id',
+  carts: 'id',
+  settings: 'key',
 })
 
 export async function getMeta<T>(key: string): Promise<T | undefined> {
