@@ -12,10 +12,13 @@ Done when (SPEC section 15): statement totals equal the balance formula in tests
 ## Checked on the PC
 | Check | Result |
 | --- | --- |
-| API tests | 26 new in `tests/test_payments.py`: create, credit, stopped customer, validation, duplicate number and replay, void, double void, void of a checkout payment, cancel-with-void after a manual void, statement rows with voided payments, old payment moves the opening row, and **12 random histories** (invoices, payments, voids, cancels in random order) where the statement's closing equals `balance_of` equals the pulled balance and every running balance is the sum of the rows before it |
-| Web tests | 323 pass: payment screen, void flow, refused payments, double-refund guard, outbox discard and retry, and **15 random offline histories** where the balance on screen equals the formula written out again in the test, the opening row of the statement lands on the real opening balance, the closing equals the balance, and the toggle adds rows without changing the closing |
+| API tests | 296 pass (26 new in `tests/test_payments.py`: create, credit, stopped customer, validation, duplicate number and replay, void, double void, void of a checkout payment, cancel-with-void after a manual void, statement rows with voided payments, old payment moves the opening row, and **12 random histories** (invoices, payments, voids, cancels in random order) where the statement closing equals `balance_of` equals the pulled balance and every running balance is the sum of the rows before it) |
+| Web tests | 329 pass: payment screen, void flow, refused payments, double-refund guard, outbox discard and retry, and **15 random offline histories** where the balance on screen equals the formula written out again in the test, the opening row of the statement lands on the real opening balance, the closing equals the balance, and the toggle adds rows without changing the closing |
 | WebKit journey | adds: offline payment from the profile → shown at once with the balance changed and marked "not sent" → reconnect → the server has one standalone payment (no invoice, 50.00) and balance 111.00 → void with a reason → the server marks it voided, balance back to 161.00 → the statement ends on 161.00 and shows the voided row only with the toggle |
 | ruff, ruff format, mypy, ESLint, Prettier, tsc | clean |
+
+## Also fixed on the way
+- **The first PDF after the API container starts could take over 30 s** (it timed out in the browser journey twice, on the first run of M5 and again here). The API now renders a tiny statement in a background thread at start-up (`pdf.warm_up`), and the journey's PDF step takes under 8 s. Initial JS 188.4 KB gzip.
 
 ## Not verified
 - iPad: the payment screen by touch (date field, keypad), void, the profile list.
