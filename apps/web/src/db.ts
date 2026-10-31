@@ -49,6 +49,78 @@ export interface DbImage {
   change_seq: number
 }
 
+export interface DbCustomer {
+  id: string
+  name: string
+  shop_name: string | null
+  phone: string | null
+  area: string | null
+  address: string | null
+  notes: string | null
+  opening_balance: number
+  search_text: string
+  is_active: boolean
+  /** What the server last said he owes (positive) or is owed (negative); the screen adds the
+   * effect of the commands still waiting. */
+  balance: number
+  /** 0 for a row made on this device and not yet confirmed by the server. */
+  change_seq: number
+}
+
+export interface DbInvoice {
+  id: string
+  number: string
+  customer_id: string
+  status: 'confirmed' | 'cancelled'
+  subtotal: number
+  discount: number
+  total: number
+  note: string | null
+  issued_at: string
+  delivered_at: string | null
+  cancelled_at: string | null
+  cancel_reason: string | null
+  change_seq: number
+}
+
+export interface DbInvoiceLine {
+  id: string
+  invoice_id: string
+  variant_id: string
+  product_name: string
+  variant_label: string
+  qty: number
+  unit_price: number
+  line_total: number
+  discount_share: number
+  sort_order: number
+  change_seq: number
+}
+
+export interface DbPayment {
+  id: string
+  number: string
+  customer_id: string
+  invoice_id: string | null
+  method: 'cash' | 'transfer' | 'cheque'
+  amount: number
+  paid_at: string
+  note: string | null
+  status: 'active' | 'voided'
+  voided_at: string | null
+  void_reason: string | null
+  change_seq: number
+}
+
+/** A draft sale: one open cart per customer, and one for a sale with no customer yet (`id` is
+ * the customer id, or `none`). Lives only on this device. */
+export interface DbCart {
+  id: string
+  customer_id: string | null
+  lines: { variant_id: string; qty: number }[]
+  updated_at: string
+}
+
 export interface CommandError {
   code: string
   message: string
@@ -75,6 +147,11 @@ export type SalesDb = Dexie & {
   variants: EntityTable<DbVariant, 'id'>
   images: EntityTable<DbImage, 'id'>
   outbox: EntityTable<OutboxRow, 'seq'>
+  customers: EntityTable<DbCustomer, 'id'>
+  invoices: EntityTable<DbInvoice, 'id'>
+  invoice_lines: EntityTable<DbInvoiceLine, 'id'>
+  payments: EntityTable<DbPayment, 'id'>
+  carts: EntityTable<DbCart, 'id'>
 }
 
 export const db = new Dexie('sales-rep') as SalesDb
@@ -88,6 +165,21 @@ db.version(2).stores({
   variants: 'id, product_id',
   images: 'id, product_id',
   outbox: '++seq, &id, status',
+})
+// Version 3 (M4): customers, invoices and payments from the server, and local carts. The outbox,
+// the carts of an older version (none) and `meta` (login, PIN, counters) are left as they are.
+db.version(3).stores({
+  meta: 'key',
+  categories: 'id',
+  products: 'id, category_id',
+  variants: 'id, product_id',
+  images: 'id, product_id',
+  outbox: '++seq, &id, status',
+  customers: 'id',
+  invoices: 'id, customer_id, status, issued_at',
+  invoice_lines: 'id, invoice_id',
+  payments: 'id, customer_id, invoice_id',
+  carts: 'id',
 })
 
 export async function getMeta<T>(key: string): Promise<T | undefined> {

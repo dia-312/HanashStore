@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { getMeta, setMeta } from '../../db'
 import { ApiError } from '../api'
 import { runImageQueue } from './images'
+import { fetchServerNumbers, raiseCounters } from '../counters'
 import { recordPerf } from '../perf'
 import { pendingCount } from './outbox'
 import { pullAll } from './pull'
@@ -61,6 +62,8 @@ async function runOnce(): Promise<boolean> {
     const started = performance.now()
     await pushPending()
     await pullAll()
+    // Document numbers continue above the server's (matters on a replacement iPad).
+    await raiseCounters(await fetchServerNumbers())
     const now = Date.now()
     await setMeta('lastSyncAt', now)
     useSync.setState({ lastSyncAt: now, lastError: null, firstSyncDone: true })

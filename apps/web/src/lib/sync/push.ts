@@ -25,12 +25,17 @@ const send: Send = (deviceId, commands) =>
 /**
  * What the server said about one batch, written in a single transaction: an applied command leaves
  * the outbox at the same moment its new stock quantities land, so the screen never flickers back to
- * the old number. A rejected command stays, marked, for the sync screen.
+ * the old number (and, for a sale, the customer's balance the server worked out). A rejected
+ * command stays, marked, for the sync screen.
  */
 async function recordResults(results: CommandResult[]): Promise<void> {
-  await db.transaction('rw', [db.outbox, db.variants], async () => {
+  await db.transaction('rw', [db.outbox, db.variants, db.customers], async () => {
     for (const result of results) {
       if (result.status === 'applied') {
+        const { customer_id: customerId, customer_balance: balance } = result.data ?? {}
+        if (customerId !== undefined && balance !== undefined) {
+          await db.customers.where('id').equals(customerId).modify({ balance })
+        }
         for (const state of result.data?.variants ?? []) {
           const variant = await db.variants.get(state.id)
           if (variant && state.change_seq >= variant.change_seq) {

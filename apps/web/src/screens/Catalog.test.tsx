@@ -111,7 +111,7 @@ describe('Catalog screen (reads the device, not the network)', () => {
     renderCatalog()
     await screen.findByText('منتج 1')
     await waitFor(() => expect(fetchStub).toHaveBeenCalled())
-    for (const [url] of fetchStub.mock.calls) expect(String(url)).toContain('/sync/pull')
+    for (const [url] of fetchStub.mock.calls) expect(String(url)).toContain('/sync/')
   })
 
   it('works offline: the same products are there', async () => {
