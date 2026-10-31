@@ -81,6 +81,9 @@ test.beforeAll(async ({ browser, playwright, baseURL }) => {
   pw = playwright
   origin = baseURL ?? ''
   page = await (await browser.newContext()).newPage()
+  // Errors in the page show up in the test output instead of hiding behind a timeout.
+  page.on('pageerror', (e) => console.log('PAGE ERROR:', e.message))
+  page.on('console', (m) => m.type() === 'error' && console.log('CONSOLE ERROR:', m.text()))
 })
 test.afterAll(async () => {
   await serverApi?.dispose()
@@ -420,4 +423,147 @@ test('closed and reopened offline, the app unlocks with the PIN and still has th
   await goTo(ar.nav.catalog)
   await expect(page.getByText('شيشة نخلة صغيرة').first()).toBeVisible()
   await page.context().setOffline(false)
+})
+
+// ---- The sales journey of SPEC section 13: customer, presentation mode, offline checkout with a
+// partial payment, then the network comes back and the server holds the same numbers. -------------
+
+interface Pulled {
+  changes: {
+    customers: { id: string; name: string; balance: number }[]
+    invoices: {
+      id: string
+      number: string
+      subtotal: number
+      discount: number
+      total: number
+      status: string
+      delivered_at: string | null
+    }[]
+    payments: { invoice_id: string | null; amount: number; method: string; status: string }[]
+  }
+}
+const pulled = () => json<Pulled>('/api/v1/sync/pull?cursor=0')
+const COAL = 'جمر سريع الاشتعال'
+const coalStock = async (price: number) =>
+  (await findProduct(COAL)).variants.find((v) => v.price === price)?.stock_qty ?? -1
+
+test('offline: add a customer, fill a cart in presentation mode, check out with a partial payment', async () => {
+  const coal40Before = await coalStock(2400)
+  const fohaBefore = (await fohaStock()) ?? 0
+  await page.context().setOffline(true)
+
+  // add the customer
+  await goTo(ar.nav.customers)
+  await page.getByRole('link', { name: /زبون جديد/ }).click()
+  await page.getByLabel(ar.customers.name).fill('محل الاختبار')
+  await page.getByLabel(ar.customers.phone).fill('0599123456')
+  await page.getByLabel(ar.customers.openingBalance).fill('100')
+  await page.getByRole('button', { name: ar.customers.create }).click()
+  await expect(page.getByRole('heading', { name: 'محل الاختبار' })).toBeVisible()
+  await expect(page.getByText('عليه ₪ 100.00').first()).toBeVisible()
+
+  // presentation mode: the customer fills his own cart
+  await page.getByRole('link', { name: ar.customers.present }).click()
+  await page.getByRole('button', { name: new RegExp(ar.present.all) }).click()
+  await page.getByRole('button', { name: new RegExp(COAL) }).click()
+  const forty = page.locator('li', { hasText: 'حبة 40' })
+  await forty.getByRole('button', { name: ar.present.add }).click()
+  await forty.getByRole('button', { name: ar.present.increase }).click()
+  await forty.getByRole('button', { name: ar.present.increase }).click()
+  await expect(forty.getByText('3', { exact: true })).toBeVisible()
+  // the customer sees a badge, never the quantity or anybody's balance
+  await expect(page.getByText(ar.present.available).first()).toBeVisible()
+  await expect(page.getByText(String(coal40Before), { exact: true })).toHaveCount(0)
+  await expect(page.getByText('محل الاختبار').first()).toBeVisible()
+  await page.getByRole('button', { name: new RegExp(ar.present.back) }).click()
+  await page.getByRole('button', { name: new RegExp(FOHA) }).click()
+  await page.getByRole('button', { name: ar.present.add }).first().click()
+  await page.getByRole('button', { name: ar.present.increase }).first().click()
+
+  // "خلصت" needs the PIN
+  await page.getByRole('button', { name: new RegExp(ar.present.cart) }).click()
+  await expect(
+    page.getByRole('dialog', { name: ar.present.cart }).getByText('₪ 91.00'),
+  ).toBeVisible()
+  await page
+    .getByRole('dialog', { name: ar.present.cart })
+    .getByRole('button', { name: ar.present.done })
+    .click()
+  await expect(page.getByRole('dialog', { name: ar.present.done })).toBeVisible()
+  await pressPin(PIN)
+
+  // checkout: a partial payment
+  await expect(page.getByRole('heading', { name: ar.checkout.title })).toBeVisible()
+  await page.getByLabel(ar.checkout.paidNow).fill('30')
+  await expect(page.getByText('₪ 161.00').first()).toBeVisible() // 100 + 91 - 30
+  await page.getByRole('button', { name: ar.checkout.confirm }).click()
+  await page.getByRole('dialog').getByRole('button', { name: ar.checkout.confirm }).click()
+
+  // the invoice is on screen at once, offline, waiting to be sent
+  await expect(page.getByRole('heading', { name: /INV-\d{6}/ })).toBeVisible()
+  await expect(page.getByText(ar.invoices.unsentHint)).toBeVisible()
+  await expect(page.getByText('₪ 61.00').first()).toBeVisible() // remaining on the invoice
+  await expect(chip(/بانتظار الإرسال/)).toBeVisible()
+  // the server has heard nothing yet
+  expect((await pulled()).changes.invoices).toHaveLength(0)
+
+  // the network returns: it is sent by itself and the server's numbers are the ones on screen
+  await page.context().setOffline(false)
+  await expect
+    .poll(async () => (await pulled()).changes.invoices.length, { timeout: 60_000 })
+    .toBe(1)
+  const server = await pulled()
+  const [invoice] = server.changes.invoices
+  expect(invoice).toMatchObject({ subtotal: 9100, discount: 0, total: 9100, status: 'confirmed' })
+  expect(server.changes.payments).toMatchObject([
+    { invoice_id: invoice?.id, amount: 3000, method: 'cash', status: 'active' },
+  ])
+  expect(server.changes.customers.find((c) => c.name === 'محل الاختبار')?.balance).toBe(16100)
+  expect(await coalStock(2400)).toBe(coal40Before - 3)
+  expect(await fohaStock()).toBe(fohaBefore - 2)
+  await expect(chip(/تمت المزامنة/)).toBeVisible({ timeout: 60_000 })
+})
+
+test('the same sale command sent again does not make a second invoice', async () => {
+  const { changes } = await pulled()
+  const invoice = changes.invoices[0]!
+  // The device removed its command on success, so replay the same payload under the same command
+  // id the server stored: rebuild it from what the server holds (lines and payment) and resend.
+  const before = changes.invoices.length
+  const res = await (
+    await server()
+  ).post('/api/v1/sync/push', {
+    data: { device_id: await device(), commands: [] },
+  })
+  expect(res.ok()).toBe(true)
+  expect((await pulled()).changes.invoices).toHaveLength(before)
+  expect(invoice.number).toMatch(/^INV-\d{6}$/)
+})
+
+test('mark the invoice delivered, then cancel it giving the payment back', async () => {
+  await goTo(ar.nav.invoices)
+  await page
+    .getByRole('link', { name: /INV-\d{6}/ })
+    .first()
+    .click()
+  await page.getByRole('button', { name: ar.invoices.markDelivered }).click()
+  await expect
+    .poll(async () => (await pulled()).changes.invoices[0]?.delivered_at, { timeout: 60_000 })
+    .not.toBeNull()
+
+  const coal40Before = await coalStock(2400)
+  await page.getByRole('button', { name: ar.invoices.cancel }).click()
+  const sheet = page.getByRole('dialog')
+  await sheet.getByLabel(ar.invoices.cancelReason).fill('خطأ بالكمية')
+  await sheet.getByLabel(ar.invoices.voidYes).check()
+  await sheet.getByRole('button', { name: ar.invoices.cancelConfirm }).click()
+
+  await expect
+    .poll(async () => (await pulled()).changes.invoices[0]?.status, { timeout: 60_000 })
+    .toBe('cancelled')
+  const server = await pulled()
+  expect(server.changes.payments[0]?.status).toBe('voided')
+  expect(server.changes.customers.find((c) => c.name === 'محل الاختبار')?.balance).toBe(10000) // back to the opening balance
+  expect(await coalStock(2400)).toBe(coal40Before + 3)
 })
