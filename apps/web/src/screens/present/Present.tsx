@@ -2,6 +2,7 @@ import { useDeferredValue, useMemo, useState } from 'react'
 import { useNavigate, useParams } from 'react-router'
 import { PinGate } from '../../components/PinGate'
 import { Thumb } from '../../components/Thumb'
+import { VirtualGrid } from '../../components/VirtualGrid'
 import { db } from '../../db'
 import { ar, fill } from '../../i18n/ar'
 import { clampQty, getCart, setLineQty } from '../../lib/cart'
@@ -163,6 +164,7 @@ export default function Present() {
           (p) => categoryId === null || categoryId === ALL || p.category_id === categoryId,
         )
   const atHome = categoryId === null && q === '' && product === null
+  const listView = catalog !== null && product === null && !atHome
 
   const goBack = () => {
     if (product) setProductId(null)
@@ -208,7 +210,9 @@ export default function Present() {
         </button>
       </header>
 
-      <main className="min-h-0 flex-1 overflow-auto p-4">
+      <main
+        className={`min-h-0 flex-1 p-4 ${listView ? 'flex flex-col overflow-hidden' : 'overflow-auto'}`}
+      >
         {catalog === null ? (
           <p aria-busy="true">{ar.common.loading}</p>
         ) : product ? (
@@ -296,29 +300,30 @@ export default function Present() {
                   onClick={() => setCategoryId(c.id)}
                   className="overflow-hidden rounded-2xl bg-white text-start shadow-sm"
                 >
-                  <Thumb url={c.cover} />
+                  <Thumb url={c.cover} eager />
                   <span className="block p-3 text-lg font-bold">{c.name}</span>
                 </button>
               ))}
             </div>
           </div>
         ) : (
-          <div className="mx-auto grid max-w-6xl gap-3">
+          <div className="mx-auto flex min-h-0 w-full max-w-6xl flex-1 flex-col gap-3">
             <button type="button" onClick={goBack} className="min-h-11 w-fit font-bold underline">
               → {ar.present.categories}
             </button>
             {shown.length === 0 ? (
               <p className="py-10 text-center text-lg">{ar.present.noProducts}</p>
             ) : (
-              <div className="grid grid-cols-3 gap-4 landscape:grid-cols-4">
-                {shown.map((p) => (
+              <VirtualGrid
+                items={shown}
+                keyOf={(p) => p.id}
+                render={(p) => (
                   <button
-                    key={p.id}
                     type="button"
                     onClick={() => setProductId(p.id)}
-                    className="overflow-hidden rounded-2xl bg-white text-start shadow-sm"
+                    className="block w-full overflow-hidden rounded-2xl bg-white text-start shadow-sm"
                   >
-                    <Thumb url={p.thumb} />
+                    <Thumb url={p.thumb} eager />
                     <span className="grid gap-1 p-3">
                       <span className="line-clamp-2 min-h-12 text-lg font-bold">{p.name}</span>
                       <bdi className="font-bold">{priceText(p)}</bdi>
@@ -327,8 +332,8 @@ export default function Present() {
                       </span>
                     </span>
                   </button>
-                ))}
-              </div>
+                )}
+              />
             )}
           </div>
         )}

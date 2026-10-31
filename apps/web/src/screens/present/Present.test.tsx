@@ -1,6 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, setMeta, wipeLocalData, type DbCustomer, type DbVariant } from '../../db'
 import { ar } from '../../i18n/ar'
 import { getCart } from '../../lib/cart'
@@ -8,6 +8,16 @@ import { freshAttempts } from '../../lib/lock'
 import { createPinRecord } from '../../lib/pin'
 import { resetAuthStore, useAuth } from '../../store'
 import Present from './Present'
+
+// jsdom has no layout, so the real virtualizer would show no rows; this stand-in lists every row.
+vi.mock('@tanstack/react-virtual', () => ({
+  useVirtualizer: ({ count }: { count: number }) => ({
+    getTotalSize: () => count * 100,
+    getVirtualItems: () =>
+      Array.from({ length: count }, (_, index) => ({ index, key: index, start: index * 100 })),
+    measureElement: () => undefined,
+  }),
+}))
 
 const customer = (id: string, name: string, balance = 0): DbCustomer => ({
   id,
@@ -57,6 +67,14 @@ const pressPin = async (pin: string) => {
 }
 
 beforeEach(async () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  )
   await wipeLocalData()
   Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
   await setMeta('pin', await createPinRecord('1234', 1000))
@@ -86,7 +104,10 @@ beforeEach(async () => {
   await db.customers.bulkPut([customer('c-1', 'أحمد', 15000), customer('c-2', 'بلال السري', 99900)])
 })
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  vi.unstubAllGlobals()
+})
 
 const openProduct = async () => {
   fireEvent.click(await screen.findByRole('button', { name: new RegExp(ar.present.all) }))
