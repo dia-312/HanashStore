@@ -260,6 +260,12 @@ export function Catalog() {
             ☰ {ar.catalog.list}
           </button>
         </div>
+        <Link
+          to="/present"
+          className="inline-flex min-h-12 items-center rounded-xl border-2 border-navy/30 bg-white px-5 font-bold"
+        >
+          {ar.catalog.present}
+        </Link>
         {online && (
           <Link
             to="/catalog/new"
