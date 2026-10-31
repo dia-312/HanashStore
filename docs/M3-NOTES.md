@@ -34,14 +34,16 @@ Done when (SPEC section 15): a stock-in entered offline appears on the server af
 - A damage larger than the stock is not accepted.
 - All product images are on the device (Settings counter).
 
-## Known gaps (saved to fix later)
-1. **Server-side changes reach the device late.** A quantity or price changed on the server (a command from another path, an online edit) shows on the device only at the next sync: about 60 s, or when the app returns to the front. Idea: also pull when a stock or product screen opens.
-2. **Online-only edits.** Product, variant and category edits, photos, import and movement history need internet (SPEC section 8 says so). Idea: price and alert-level edits as commands later, and show waiting stock commands in the movement history.
-3. **Not tried on the iPad:** the update banner after a redeploy, closing and reopening the app offline with commands waiting, and a command the server itself refuses (the device blocks that case up front; the refusal path is only covered by the WebKit journey and the API tests).
-4. **No iPad figures:** first sync time and catalog reopen time were "fast" but not measured; the budgets (reopen < 300 ms) are unmeasured on the device.
-5. **The WebKit journey is not in CI.**
-6. **Search is still the basic word match** on the product's text (real search with synonyms and typo tolerance is M8).
-7. **First pull of a big write is one page** (the seed or a 5,000-row import): fine at the measured size (408 ms, 760 KB for 2,805 rows) but not split by size.
+## Known gaps (saved to fix later) and what was done
+1. **Server-side changes reach the device late** — fixed: opening the catalog, a product or the stock screen now asks for a sync (a pull with nothing new takes a few dozen ms). The WebKit journey checks that a +3 made on the server shows in the catalog on opening. Still, between screens it is the 60-second timer.
+2. **Online-only edits** — partly: product, variant and category edits, photos and import still need internet (SPEC section 8). Commands waiting on the device now show in a variant's movement history, marked "بانتظار الإرسال". Price edits as commands remain an idea for later.
+3. **Not tried on the iPad:** the update banner after a redeploy, closing and reopening the app offline with commands waiting, and a command the server itself refuses (the device blocks that case up front; the refusal path is covered by the WebKit journey and the API tests).
+4. **No measured iPad figures** — fixed in the app: Settings now shows "آخر فتح للكتالوج" and "أول مزامنة" in ms, measured on the device, so the real numbers can be read there.
+5. **WebKit journey not in CI** — added as the `e2e` job (`bash scripts/e2e.sh`); its first runs are watched.
+6. **Search is still the basic word match** (real search with synonyms and typo tolerance is M8).
+7. **First pull of a big write is one page** (the seed or a 5,000-row import): fine at the measured size (408 ms, 760 KB for 2,805 rows), not split by size.
+
+Also changed: the stock picker no longer waits 250 ms before filtering (a delayed list swap could eat a tap); it filters as you type.
 
 ## Not verified
 - Offline display of product photos on the product page was not checked in the browser (the iPad check confirmed the files are on the device).

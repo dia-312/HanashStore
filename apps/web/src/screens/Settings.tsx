@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react'
 import { useImages, redownloadAllImages, refreshImageProgress } from '../lib/sync/images'
 import { Link } from 'react-router'
 import { ar, fill } from '../i18n/ar'
+import { readPerf } from '../lib/perf'
+import { useLive } from '../lib/useLive'
 import { PENDING_COMMANDS, useAuth } from '../store'
 import { SetPin } from './SetPin'
 
@@ -14,6 +16,7 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null)
 
   const images = useImages()
+  const perf = useLive(async () => (await readPerf()) ?? {}, [])
 
   useEffect(() => {
     void navigator.storage?.persisted?.().then(setPersisted, () => setPersisted(false))
@@ -57,6 +60,26 @@ export default function Settings() {
               {fill(ar.settings.imagesProgress, { cached: images.cached, total: images.total })}
             </bdi>
             {images.running && ` · ${ar.settings.imagesRunning}`}
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="font-bold">{ar.settings.perfCatalog}</dt>
+          <dd>
+            <bdi>
+              {perf?.catalogOpenMs === undefined
+                ? ar.settings.perfNone
+                : fill(ar.settings.ms, { n: perf.catalogOpenMs })}
+            </bdi>
+          </dd>
+        </div>
+        <div className="flex justify-between gap-4">
+          <dt className="font-bold">{ar.settings.perfFirstSync}</dt>
+          <dd>
+            <bdi>
+              {perf?.firstSyncMs === undefined
+                ? ar.settings.perfNone
+                : fill(ar.settings.ms, { n: perf.firstSyncMs })}
+            </bdi>
           </dd>
         </div>
       </dl>

@@ -320,17 +320,12 @@ test('the same command sent twice applies once', async () => {
   expect(await fohaStock()).toBe(before + 3)
 })
 
-// What the server changed meanwhile reaches the device at the next sync; this asks for one.
-const syncFromDevice = async () => {
-  await chip(/المزامنة|بانتظار|مشكلة/).click()
-  const now = page.getByRole('button', { name: ar.sync.now })
-  await now.click()
-  await expect(now).toBeEnabled()
-}
-
 test('offline: the catalog is there, a stock-in is saved on the device and shown at once', async () => {
-  await syncFromDevice() // the device has to know the +3 the previous test made on the server
   const before = (await fohaStock()) ?? 0
+  // Opening the catalog asks the server what changed: the +3 the previous test made on the server
+  // (not through this device) is there without waiting for the next minute.
+  await goTo(ar.nav.catalog)
+  await expect(page.getByText(new RegExp(`متوفر.*${before}`)).first()).toBeVisible()
   await page.context().setOffline(true)
   await expect(chip(/بدون اتصال/)).toBeVisible()
 
