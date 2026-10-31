@@ -1,4 +1,4 @@
-import { memo, useDeferredValue, useEffect, useMemo, useState } from 'react'
+import { memo, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { StatusBadge } from '../components/StatusBadge'
@@ -8,7 +8,9 @@ import type { ProductListItem } from '../lib/catalogApi'
 import { buildCategories, buildProductList, loadSnapshot } from '../lib/localCatalog'
 import { formatMoney } from '../lib/money'
 import { useOnline } from '../lib/online'
+import { recordPerf } from '../lib/perf'
 import { useSync } from '../lib/sync/engine'
+import { useSyncOnOpen } from '../lib/sync/useSyncOnOpen'
 import { useLive } from '../lib/useLive'
 
 type View = 'grid' | 'list'
@@ -191,6 +193,7 @@ function Skeleton() {
 
 export function Catalog() {
   const online = useOnline()
+  useSyncOnOpen()
   const firstSyncDone = useSync((s) => s.firstSyncDone)
   const [text, setText] = useState('')
   // Typing never waits for the list: React renders the results when it has a free moment.
@@ -199,6 +202,15 @@ export function Catalog() {
   const [includeInactive, setIncludeInactive] = useState(false)
   const [view, setView] = useState<View>(loadView)
   const snapshot = useLive(loadSnapshot, [])
+
+  // How long opening this screen took, shown in Settings (the budget is 300 ms, SPEC section 17).
+  const [openedAt] = useState(() => performance.now())
+  const measured = useRef(false)
+  useEffect(() => {
+    if (snapshot === undefined || measured.current) return
+    measured.current = true
+    void recordPerf({ catalogOpenMs: Math.round(performance.now() - openedAt) })
+  }, [snapshot, openedAt])
 
   const categories = useMemo(() => (snapshot ? buildCategories(snapshot) : []), [snapshot])
   const items = useMemo(

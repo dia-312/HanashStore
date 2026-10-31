@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { ar } from '../../i18n/ar'
+import { useSyncOnOpen } from '../../lib/sync/useSyncOnOpen'
 import { StockIn } from './StockIn'
 import { StockCount, StockDamage } from './StockSingle'
 
@@ -12,6 +13,7 @@ const tabs: { id: Tab; label: string }[] = [
 ]
 
 export default function Stock() {
+  useSyncOnOpen()
   const [tab, setTab] = useState<Tab>('in')
   // Bumping the round remounts the active form, so "new movement" starts from a clean screen.
   const [round, setRound] = useState(0)
