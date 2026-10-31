@@ -94,3 +94,68 @@ def adjust(
         "note": note,
     }
     return push_one(api, command("stock.adjust", payload))
+
+
+def customer_cmd(
+    customer_id: str | None = None, name: str = "محل النور", **extra: Any
+) -> dict[str, Any]:
+    payload = {"customer_id": customer_id or str(uuid.uuid4()), "name": name, **extra}
+    return command("customer.upsert", payload)
+
+
+def customer(api: TestClient, name: str = "محل النور", **extra: Any) -> str:
+    """Adds a customer through the push path and returns his id."""
+    cmd = customer_cmd(name=name, **extra)
+    result = push_one(api, cmd)
+    assert result["status"] == "applied", result
+    return str(cmd["payload"]["customer_id"])
+
+
+_NUMBERS = {"INV": 0, "REC": 0}
+
+
+def next_number(kind: str) -> str:
+    _NUMBERS[kind] += 1
+    return f"{kind}-{_NUMBERS[kind]:06d}"
+
+
+def invoice_cmd(
+    customer_id: str,
+    lines: list[tuple[str, int, int]],
+    *,
+    discount: int = 0,
+    paid: int = 0,
+    method: str = "cash",
+    pay_note: str | None = None,
+    number: str | None = None,
+    issued_at: str = "2026-11-02T09:14:20Z",
+    invoice_id: str | None = None,
+) -> dict[str, Any]:
+    """lines are (variant_id, qty, unit_price)."""
+    payload: dict[str, Any] = {
+        "invoice_id": invoice_id or str(uuid.uuid4()),
+        "number": number or next_number("INV"),
+        "customer_id": customer_id,
+        "issued_at": issued_at,
+        "discount": discount,
+        "note": None,
+        "lines": [
+            {"line_id": str(uuid.uuid4()), "variant_id": v, "qty": q, "unit_price": p}
+            for v, q, p in lines
+        ],
+    }
+    if paid:
+        payload["payment"] = {
+            "payment_id": str(uuid.uuid4()),
+            "number": next_number("REC"),
+            "amount": paid,
+            "method": method,
+            "note": pay_note,
+        }
+    return command("invoice.create", payload)
+
+
+def sell(
+    api: TestClient, customer_id: str, lines: list[tuple[str, int, int]], **extra: Any
+) -> dict[str, Any]:
+    return push_one(api, invoice_cmd(customer_id, lines, **extra))

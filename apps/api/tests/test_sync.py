@@ -37,7 +37,16 @@ def _ids(page: dict[str, Any]) -> set[str]:
 def test_pull_on_an_empty_server(api: TestClient) -> None:
     page = _pull(api)
     assert page == {
-        "changes": {"categories": [], "products": [], "variants": [], "images": []},
+        "changes": {
+            "categories": [],
+            "products": [],
+            "variants": [],
+            "images": [],
+            "customers": [],
+            "invoices": [],
+            "invoice_lines": [],
+            "payments": [],
+        },
         "cursor": 0,
         "has_more": False,
     }

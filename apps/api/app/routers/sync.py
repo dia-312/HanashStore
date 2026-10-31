@@ -33,3 +33,13 @@ def push(
         raise ApiError(403, "DEVICE_MISMATCH", "These commands belong to another device")
     results, cursor = sync.push(db, auth.device, body.commands)
     return {"results": results, "cursor": cursor}
+
+
+@router.get("/numbers")
+def numbers(
+    db: Session = Depends(get_db),
+    _auth: AuthContext = Depends(current_auth),
+) -> dict[str, int]:
+    """Highest invoice (INV) and payment (REC) numbers on the server: a device starts its own
+    counters above these when it has none (first login, replacement iPad)."""
+    return sync.highest_numbers(db)

@@ -11,6 +11,7 @@ id, so the same id sent again returns the stored result and changes nothing.
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import Any
 
 from pydantic import ValidationError
@@ -24,7 +25,11 @@ from app.changeseq import take_seq
 from app.errors import ApiError
 from app.models import (
     Category,
+    Customer,
     Device,
+    Invoice,
+    InvoiceLine,
+    Payment,
     ProcessedCommand,
     Product,
     ProductImage,
@@ -32,55 +37,112 @@ from app.models import (
 )
 from app.schemas import (
     AdjustPayload,
+    CancelPayload,
     CommandIn,
+    CustomerPayload,
     DamagePayload,
+    InvoiceCreatePayload,
+    MarkDeliveredPayload,
     PullChanges,
     PullPage,
     PurchasePayload,
     SyncCategory,
+    SyncCustomer,
     SyncImage,
+    SyncInvoice,
+    SyncInvoiceLine,
+    SyncPayment,
     SyncProduct,
     SyncVariant,
 )
-from app.services import stock
+from app.services import catalog, customers, invoices, stock
 
 PULL_LIMIT = 1000
 # The current command format and the one before it, so a device with old pending commands can
 # still sync after an update (SPEC section 8).
 SUPPORTED_SCHEMA = frozenset({1})
 
-_TABLES = (Category, Product, ProductVariant, ProductImage)
+_TABLES = (
+    Category,
+    Product,
+    ProductVariant,
+    ProductImage,
+    Customer,
+    Invoice,
+    InvoiceLine,
+    Payment,
+)
+
+# Invoices, their lines and their payments are kept on the device for the last 12 months only
+# (SPEC section 8); older ones are fetched when needed (returns, M7).
+HISTORY = timedelta(days=366)
+
+
+def _in_window(model: Any, cutoff: Any) -> list[Any]:
+    if model is Invoice:
+        return [Invoice.issued_at >= cutoff]
+    if model is Payment:
+        return [Payment.paid_at >= cutoff]
+    if model is InvoiceLine:
+        return [InvoiceLine.invoice_id.in_(select(Invoice.id).where(Invoice.issued_at >= cutoff))]
+    return []
 
 
 def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
+    cutoff = clock.utcnow() - HISTORY
     seqs = union_all(
-        *(select(t.change_seq.label("seq")).where(t.change_seq > cursor) for t in _TABLES)
+        *(
+            select(t.change_seq.label("seq")).where(t.change_seq > cursor, *_in_window(t, cutoff))
+            for t in _TABLES
+        )
     )
     seqs_sub = seqs.subquery()
     # The change_seq of the limit-th row: the page includes every row up to and including it.
     boundary = db.scalar(select(seqs_sub.c.seq).order_by(seqs_sub.c.seq).offset(limit - 1).limit(1))
 
     def rows(model: Any) -> list[Any]:
-        query = select(model).where(model.change_seq > cursor)
+        query = select(model).where(model.change_seq > cursor, *_in_window(model, cutoff))
         if boundary is not None:
             query = query.where(model.change_seq <= boundary)
         return list(db.scalars(query.order_by(model.change_seq, model.id)))
 
-    categories, products, variants, images = (rows(t) for t in _TABLES)
+    groups = [rows(t) for t in _TABLES]
+    categories, products, variants, images, customer_rows, inv, lines, payments = groups
     has_more = boundary is not None and any(
-        db.scalar(select(t.id).where(t.change_seq > boundary).limit(1)) is not None for t in _TABLES
+        db.scalar(select(t.id).where(t.change_seq > boundary, *_in_window(t, cutoff)).limit(1))
+        is not None
+        for t in _TABLES
     )
-    seen = [r.change_seq for group in (categories, products, variants, images) for r in group]
+    seen = [r.change_seq for group in groups for r in group]
+    balances = customers.balances(db, [c.id for c in customer_rows])
     return PullPage(
         changes=PullChanges(
             categories=[SyncCategory.model_validate(r) for r in categories],
             products=[SyncProduct.model_validate(r) for r in products],
             variants=[SyncVariant.model_validate(r) for r in variants],
             images=[SyncImage.model_validate(r) for r in images],
+            customers=[
+                SyncCustomer.model_validate(c).model_copy(update={"balance": balances[c.id]})
+                for c in customer_rows
+            ],
+            invoices=[SyncInvoice.model_validate(r) for r in inv],
+            invoice_lines=[SyncInvoiceLine.model_validate(r) for r in lines],
+            payments=[SyncPayment.model_validate(r) for r in payments],
         ),
         cursor=max(seen, default=cursor),
         has_more=has_more,
     )
+
+
+def highest_numbers(db: Session) -> dict[str, int]:
+    """The highest INV and REC numbers the server has, so a new or replacement device can start
+    its own counters above them (SPEC section 7)."""
+
+    def top(table: str) -> int:
+        query = f"SELECT COALESCE(MAX(substring(number FROM '[0-9]+$')::bigint), 0) FROM {table}"
+        return int(db.scalar(text(query)) or 0)
+
+    return {"INV": top("invoices"), "REC": top("payments")}
 
 
 @dataclass
@@ -92,20 +154,7 @@ class Applied:
 Handler = Callable[[Session, Device, dict[str, Any]], Applied]
 
 
-def _variant_state(db: Session, variant_ids: list[uuid.UUID]) -> list[dict[str, Any]]:
-    """What the device needs to show the new stock right away, without waiting for a pull."""
-    out: list[dict[str, Any]] = []
-    for variant_id in dict.fromkeys(variant_ids):
-        variant = db.get(ProductVariant, variant_id)
-        if variant is not None:
-            out.append(
-                {
-                    "id": str(variant.id),
-                    "stock_qty": variant.stock_qty,
-                    "change_seq": variant.change_seq,
-                }
-            )
-    return out
+_variant_state = stock.variant_states
 
 
 def _purchase(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
@@ -177,10 +226,56 @@ def _adjust(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
     )
 
 
+def _customer_upsert(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
+    body = CustomerPayload.model_validate(raw)
+    customer = customers.upsert(
+        db,
+        customer_id=body.customer_id,
+        name=body.name,
+        shop_name=catalog.clean(body.shop_name),
+        phone=catalog.clean(body.phone),
+        area=catalog.clean(body.area),
+        address=catalog.clean(body.address),
+        notes=catalog.clean(body.notes),
+        opening_balance=body.opening_balance,
+        is_active=body.is_active,
+        seq=take_seq(db),
+        device_id=device.id,
+    )
+    return Applied(
+        {
+            "customer_id": str(customer.id),
+            "customer_balance": customers.balance_of(db, customer.id),
+            "customer_change_seq": customer.change_seq,
+        }
+    )
+
+
+def _invoice_create(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
+    body = InvoiceCreatePayload.model_validate(raw)
+    data, warnings = invoices.create_invoice(db, device, body, take_seq(db))
+    return Applied(data, warnings)
+
+
+def _invoice_mark_delivered(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
+    body = MarkDeliveredPayload.model_validate(raw)
+    return Applied(invoices.mark_delivered(db, device, body, take_seq(db)))
+
+
+def _invoice_cancel(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
+    body = CancelPayload.model_validate(raw)
+    data, warnings = invoices.cancel_invoice(db, device, body, take_seq(db))
+    return Applied(data, warnings)
+
+
 HANDLERS: dict[str, Handler] = {
     "stock.purchase": _purchase,
     "stock.damage": _damage,
     "stock.adjust": _adjust,
+    "customer.upsert": _customer_upsert,
+    "invoice.create": _invoice_create,
+    "invoice.mark_delivered": _invoice_mark_delivered,
+    "invoice.cancel": _invoice_cancel,
 }
 
 
