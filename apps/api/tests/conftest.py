@@ -24,6 +24,7 @@ def _test_database_url() -> str:
 os.environ["DATABASE_URL"] = _test_database_url()
 os.environ["COOKIE_SECURE"] = "true"
 os.environ["MEDIA_DIR"] = tempfile.mkdtemp(prefix="sales-media-")
+os.environ["PDF_WARM_UP"] = "false"
 os.environ["ARGON2_TIME_COST"] = "1"
 os.environ["ARGON2_MEMORY_KIB"] = "64"
 

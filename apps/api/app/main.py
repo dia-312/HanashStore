@@ -1,4 +1,5 @@
 import mimetypes
+import os
 import threading
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
@@ -34,8 +35,10 @@ _UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI) -> AsyncIterator[None]:
-    # In the background, so the API answers at once while WeasyPrint loads.
-    threading.Thread(target=pdf.warm_up, name="pdf-warm-up", daemon=True).start()
+    # In the background, so the API answers at once while WeasyPrint loads. Tests turn it off: a
+    # render still running inside pango when the interpreter exits aborts the process (exit 134).
+    if os.environ.get("PDF_WARM_UP", "true") != "false":
+        threading.Thread(target=pdf.warm_up, name="pdf-warm-up", daemon=True).start()
     yield
 
 
