@@ -112,10 +112,17 @@ describe('parseCount', () => {
     ['۱۲', 12],
     [' 7 ', 7],
     ['', null],
+    ['‏1', 1], // direction marks the iPad can put in a field
+    ['1‎', 1],
+    ['⁦2⁩', 2],
     ['1.5', null],
     ['-2', null],
     ['abc', null],
   ])('%s', (text, expected) => {
     expect(parseCount(text)).toBe(expected)
+  })
+
+  it('money ignores the same invisible marks', () => {
+    expect(parseMoney('‏12.50‎')).toBe(1250)
   })
 })

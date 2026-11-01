@@ -204,6 +204,19 @@ describe('Arabic digits from the iPad keyboard', () => {
   })
 })
 
+describe('invisible direction marks from the iPad keyboard', () => {
+  it('a quantity typed as 1 with marks around it is read as 1', async () => {
+    const { invoiceId } = await sell()
+    renderApp(`/invoices/${invoiceId}/return`)
+    const qty = await screen.findByLabelText(new RegExp(ar.returns.qty))
+    fireEvent.change(qty, { target: { value: '‏1‎' } })
+    expect(screen.queryByText(ar.returns.badQty)).toBeNull()
+    expect(
+      (screen.getByRole('button', { name: ar.returns.confirm }) as HTMLButtonElement).disabled,
+    ).toBe(false)
+  })
+})
+
 describe('after confirming', () => {
   it('never flashes the quantity warning while the return is being saved', async () => {
     const { invoiceId } = await sell()
