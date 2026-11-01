@@ -1,6 +1,6 @@
 # M7 — Returns: notes
 
-Branch `m7-returns` (from `main` after PR 7 was merged). **Status: built and checked on the PC (tests, WebKit browser journey). Not pushed, not yet tried on the real iPad.**
+Branch `m7-returns` (from `main` after PR 7 was merged). **Status: built, checked on the PC (tests, WebKit browser journey) and tried on the real iPad by the user (after the fix below).**
 Done when (SPEC section 15): returning every line of a discounted invoice in several partial returns credits exactly its total. It does, on both sides, in unit tests, in property tests and in the browser journey (see below).
 
 ## What exists
@@ -19,11 +19,14 @@ Done when (SPEC section 15): returning every line of a discounted invoice in sev
 | WebKit journey | 18 pass, 1 skipped (as before); the first run timed out in the old M4 journey while Docker was still warming up, the rerun was clean; adds: an invoice with a discount, one unit returned offline (23.66 shown before saving, marked not sent, cancel button gone) → reconnect → the server has the return, the line and the stock back → the remaining two returned as damaged (47.34 = the exact remainder) → the returns add up to 71.00, the balance is back where it started, the damaged two did not return to the shelf, the return button disappears |
 | ruff, ruff format, mypy, ESLint, Prettier, tsc | clean |
 
+## Found on the iPad
+- **Every quantity was refused as "more than what is left"** although the typed number was right (typed 1, left 1). Safari on the iPad adds invisible direction marks (U+200E, U+200F and the like) to what is typed on an Arabic page, and the quantity parser only accepted bare digits. The jsdom and WebKit tests typed clean text, and replaying the user's real server data on the screen showed nothing wrong, which is why the warning was changed to print what was typed and what is left: that is what exposed it. Fix: `lib/money.ts` `typedText` removes marks, spaces and converts Arabic digits; `parseCount` (quantities) and `parseMoney` (amounts) use it, and the stock-in, write-off, count and minimum-stock fields now use `parseCount` too. Tests type text with the marks around it. Lesson for later screens: parse every typed number through these functions, never `Number(text)` or a bare `\d` regex.
+
 ## Not done / not verified
 - **Returns against invoices older than 12 months** (SPEC F11: they need internet because the device does not keep them). The device never lists those invoices, so the rep cannot start such a return yet; it needs a server endpoint that returns one invoice with its lines (`GET /invoices/{id}`, in the SPEC's API table but not built) and a screen path to it. Left out on purpose: no screen reaches it before M8 (search) and it would add an endpoint nothing else uses yet.
 - `GET /returns` and `GET /payments` list endpoints (SPEC table): for the reports (M8/M9).
 - A printable/shareable return receipt: not in the SPEC for the MVP.
-- iPad: the return screen by touch (numeric keypad, the restock/damaged toggle), the picker from the profile.
+- iPad: reported by the user as working after the fix; the exact steps he repeated were the one that failed (INV-000004, a line with one unit left). The rest of the checklist (damaged, second return, statement) was not reported line by line.
 
 ## Decisions and deviations
 - Quantity is typed (numeric keypad), not stepped, because a line can have many units; the maximum is shown next to the field.
