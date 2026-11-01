@@ -1,6 +1,11 @@
 import type { OutboxRow } from '../../db'
 import { invoiceTotals, lineTotal } from '../billing'
-import type { CancelPayload, InvoiceCreatePayload } from './commands'
+import type {
+  CancelPayload,
+  InvoiceCreatePayload,
+  PaymentCreatePayload,
+  PaymentVoidPayload,
+} from './commands'
 
 type PendingCommand = Pick<OutboxRow, 'type' | 'payload' | 'status'>
 
@@ -39,6 +44,12 @@ export function pendingBalances(
       const p = command.payload as CancelPayload
       // The invoice stops counting; its payment only comes back out if the rep voids it.
       add(p.customer_id, -p.total + (p.void_payment ? p.payment_amount : 0))
+    } else if (command.type === 'payment.create') {
+      const p = command.payload as PaymentCreatePayload
+      add(p.customer_id, -p.amount)
+    } else if (command.type === 'payment.void') {
+      const p = command.payload as PaymentVoidPayload
+      add(p.customer_id, p.amount) // the money goes back onto what he owes
     }
   }
   return current

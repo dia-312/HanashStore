@@ -6,6 +6,7 @@ import {
   type CommandType,
   type CustomerPayload,
   type InvoiceCreatePayload,
+  type PaymentCreatePayload,
 } from './commands'
 
 /** Every write the rep makes in the field becomes a command here first (SPEC section 8). */
@@ -58,6 +59,13 @@ export async function discard(id: string): Promise<void> {
           .equals(p.invoice_id)
           .and((x) => x.change_seq === 0)
           .delete()
+      } else if (command?.type === 'payment.create') {
+        const p = command.payload as PaymentCreatePayload
+        await db.payments
+          .where('id')
+          .equals(p.payment_id)
+          .and((x) => x.change_seq === 0)
+          .delete()
       } else if (command?.type === 'customer.upsert') {
         const p = command.payload as CustomerPayload
         await db.customers
@@ -83,6 +91,10 @@ export async function retry(id: string): Promise<void> {
     let payload = old.payload
     if (old.type === 'invoice.create' && old.error?.code === 'DUPLICATE_NUMBER') {
       payload = await withFreshNumber(payload as InvoiceCreatePayload, old.error.details.number)
+    } else if (old.type === 'payment.create' && old.error?.code === 'DUPLICATE_NUMBER') {
+      const number = await takeNumber('REC')
+      payload = { ...(payload as PaymentCreatePayload), number }
+      await db.payments.update((payload as PaymentCreatePayload).payment_id, { number })
     }
     await db.outbox.where('id').equals(id).delete()
     await db.outbox.add({

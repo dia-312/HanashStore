@@ -43,6 +43,8 @@ from app.schemas import (
     DamagePayload,
     InvoiceCreatePayload,
     MarkDeliveredPayload,
+    PaymentCreatePayload,
+    PaymentVoidPayload,
     PullChanges,
     PullPage,
     PurchasePayload,
@@ -55,7 +57,7 @@ from app.schemas import (
     SyncProduct,
     SyncVariant,
 )
-from app.services import catalog, customers, invoices, stock
+from app.services import catalog, customers, invoices, payments, stock
 from app.services import settings as settings_service
 
 PULL_LIMIT = 1000
@@ -270,6 +272,17 @@ def _invoice_cancel(db: Session, device: Device, raw: dict[str, Any]) -> Applied
     return Applied(data, warnings)
 
 
+def _payment_create(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
+    body = PaymentCreatePayload.model_validate(raw)
+    return Applied(payments.create_payment(db, device, body, take_seq(db)))
+
+
+def _payment_void(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
+    body = PaymentVoidPayload.model_validate(raw)
+    data, warnings = payments.void_payment(db, device, body, take_seq(db))
+    return Applied(data, warnings)
+
+
 HANDLERS: dict[str, Handler] = {
     "stock.purchase": _purchase,
     "stock.damage": _damage,
@@ -278,6 +291,8 @@ HANDLERS: dict[str, Handler] = {
     "invoice.create": _invoice_create,
     "invoice.mark_delivered": _invoice_mark_delivered,
     "invoice.cancel": _invoice_cancel,
+    "payment.create": _payment_create,
+    "payment.void": _payment_void,
 }
 
 

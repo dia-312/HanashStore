@@ -223,8 +223,8 @@ describe('customer profile', () => {
       method: 'cash',
     })
     renderApp('/customers/c-1')
-    expect(await screen.findByText(/INV-000001/)).toBeTruthy()
-    expect(screen.getByText(ar.invoices.unsent)).toBeTruthy()
+    expect(await screen.findByRole('link', { name: /INV-000001/ })).toBeTruthy()
+    expect(screen.getAllByText(ar.invoices.unsent).length).toBeGreaterThan(0)
     expect(screen.getByRole('link', { name: /INV-000001/ }).getAttribute('href')).toBe(
       `/invoices/${invoiceId}`,
     )

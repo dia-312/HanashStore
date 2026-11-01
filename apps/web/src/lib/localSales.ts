@@ -8,7 +8,13 @@ import {
 } from '../db'
 import { remainingOnInvoice } from './billing'
 import { normalizeArabic } from './normalize'
-import type { CancelPayload, InvoiceCreatePayload, MarkDeliveredPayload } from './sync/commands'
+import type {
+  CancelPayload,
+  InvoiceCreatePayload,
+  MarkDeliveredPayload,
+  PaymentCreatePayload,
+  PaymentVoidPayload,
+} from './sync/commands'
 import { pendingBalances } from './sync/effectiveBalance'
 
 /** Everything the customer and invoice screens read, taken from this device in one go. The
@@ -132,15 +138,30 @@ export interface Effects {
   cancelled: Map<string, { voidPayment: boolean }>
   delivered: Map<string, string>
   creation: Map<string, SendState>
+  /** Payments the rep has voided and the server has not heard yet: id to reason. */
+  voided: Map<string, string>
+  /** Standalone payments made on this device: how far they have got. */
+  paymentCreation: Map<string, SendState>
 }
 
 /** What waiting commands say about each invoice: cancelled, delivered, and not yet confirmed. */
 export function saleEffects(s: SalesSnapshot): Effects {
-  const out: Effects = { cancelled: new Map(), delivered: new Map(), creation: new Map() }
+  const out: Effects = {
+    cancelled: new Map(),
+    delivered: new Map(),
+    creation: new Map(),
+    voided: new Map(),
+    paymentCreation: new Map(),
+  }
   for (const c of s.outbox) {
     const state: SendState = c.status === 'rejected' ? 'rejected' : 'pending'
     if (c.type === 'invoice.create') {
       out.creation.set((c.payload as InvoiceCreatePayload).invoice_id, state)
+    } else if (c.type === 'payment.create') {
+      out.paymentCreation.set((c.payload as PaymentCreatePayload).payment_id, state)
+    } else if (c.status === 'pending' && c.type === 'payment.void') {
+      const p = c.payload as PaymentVoidPayload
+      out.voided.set(p.payment_id, p.reason)
     } else if (c.status === 'pending' && c.type === 'invoice.cancel') {
       const p = c.payload as CancelPayload
       out.cancelled.set(p.invoice_id, { voidPayment: p.void_payment })
@@ -152,10 +173,21 @@ export function saleEffects(s: SalesSnapshot): Effects {
   return out
 }
 
+/** Is this payment out of the books, counting what is still waiting to be sent? */
+export function paymentIsVoided(e: Effects, p: DbPayment): boolean {
+  if (p.status === 'voided' || e.voided.has(p.id)) return true
+  return p.invoice_id !== null && (e.cancelled.get(p.invoice_id)?.voidPayment ?? false)
+}
+
+/** A payment or invoice made here that the server refused: it never counted anywhere. */
+export function paymentWasRefused(e: Effects, p: DbPayment): boolean {
+  if (e.paymentCreation.get(p.id) === 'rejected') return true
+  return p.invoice_id !== null && e.creation.get(p.invoice_id) === 'rejected'
+}
+
 function paidOn(s: SalesSnapshot, e: Effects, invoiceId: string): number {
-  const voided = e.cancelled.get(invoiceId)?.voidPayment ?? false
   return s.payments
-    .filter((p) => p.invoice_id === invoiceId && p.status === 'active' && !voided)
+    .filter((p) => p.invoice_id === invoiceId && !paymentIsVoided(e, p))
     .reduce((sum, p) => sum + p.amount, 0)
 }
 
@@ -220,7 +252,10 @@ export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): Invoice
       c.type === 'invoice.create' &&
       (c.payload as InvoiceCreatePayload).invoice_id === invoiceId,
   )
-  const payments = s.payments.filter((p) => p.invoice_id === invoiceId)
+  // A payment voided here, with the server not yet told, already shows as voided.
+  const payments = s.payments
+    .filter((p) => p.invoice_id === invoiceId)
+    .map((p): DbPayment => (paymentIsVoided(e, p) ? { ...p, status: 'voided' } : p))
   return {
     ...item,
     subtotal: inv.subtotal,
@@ -241,7 +276,7 @@ export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): Invoice
     payments,
     rejectedCode: rejected?.error?.code ?? null,
     canCancel: item.status === 'confirmed' && item.sendState !== 'rejected',
-    hasActivePayment: payments.some((p) => p.status === 'active') && !e.cancelled.has(inv.id),
+    hasActivePayment: payments.some((p) => p.status === 'active'),
     cancelPending: e.cancelled.has(inv.id),
   }
 }
@@ -251,6 +286,56 @@ export interface CustomerProfile extends CustomerItem {
   notes: string | null
   opening_balance: number
   invoices: InvoiceItem[]
+  payments: PaymentItem[]
+}
+
+export interface PaymentItem {
+  id: string
+  number: string
+  amount: number
+  method: DbPayment['method']
+  paid_at: string
+  note: string | null
+  status: 'active' | 'voided'
+  void_reason: string | null
+  /** The invoice it was taken with; null for a payment on its own. */
+  invoice_number: string | null
+  sendState: SendState
+  /** The rep may void it: counted, made here or already on the server, nothing waiting on it. */
+  canVoid: boolean
+  /** A void is waiting to be sent. */
+  voidPending: boolean
+}
+
+/** A customer's payments, newest first, with what is still waiting counted in. */
+export function buildPaymentList(s: SalesSnapshot, customerId: string): PaymentItem[] {
+  const e = saleEffects(s)
+  const numbers = new Map(s.invoices.map((i) => [i.id, i.number]))
+  const items: PaymentItem[] = []
+  for (const p of s.payments) {
+    if (p.customer_id !== customerId) continue
+    const voided = paymentIsVoided(e, p)
+    const sendState: SendState = p.invoice_id
+      ? (e.creation.get(p.invoice_id) ?? 'synced')
+      : (e.paymentCreation.get(p.id) ?? 'synced')
+    items.push({
+      id: p.id,
+      number: p.number,
+      amount: p.amount,
+      method: p.method,
+      paid_at: p.paid_at,
+      note: p.note,
+      status: voided ? 'voided' : 'active',
+      void_reason: p.void_reason ?? e.voided.get(p.id) ?? null,
+      invoice_number: p.invoice_id ? (numbers.get(p.invoice_id) ?? null) : null,
+      sendState,
+      canVoid: !voided && sendState !== 'rejected',
+      voidPending: e.voided.has(p.id),
+    })
+  }
+  return items.sort(
+    (a, b) => b.paid_at.localeCompare(a.paid_at) || b.number.localeCompare(a.number),
+  )
 }
 
 export function buildCustomerProfile(s: SalesSnapshot, customerId: string): CustomerProfile | null {
@@ -264,5 +349,6 @@ export function buildCustomerProfile(s: SalesSnapshot, customerId: string): Cust
     notes: customer.notes,
     opening_balance: customer.opening_balance,
     invoices: buildInvoiceList(s, { customerId }),
+    payments: buildPaymentList(s, customerId),
   }
 }

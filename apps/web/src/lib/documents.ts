@@ -3,6 +3,8 @@ import { dayToDisplay, formatDate, formatDateTime, hebronDay } from './date'
 import {
   buildInvoiceDetail,
   effectiveBalances,
+  paymentIsVoided,
+  paymentWasRefused,
   saleEffects,
   type SalesSnapshot,
 } from './localSales'
@@ -152,6 +154,7 @@ export function buildStatement(
   const entries: (StatementEntry & { day: string })[] = []
   for (const inv of s.invoices) {
     if (inv.customer_id !== customerId) continue
+    if (e.creation.get(inv.id) === 'rejected') continue // the server refused it: it never counted
     const off = inv.status === 'cancelled' || cancelled(inv.id) ? 'cancelled' : null
     entries.push({
       kind: 'invoice',
@@ -166,8 +169,8 @@ export function buildStatement(
   }
   for (const p of s.payments) {
     if (p.customer_id !== customerId) continue
-    const voidedByCancel = p.invoice_id !== null && e.cancelled.get(p.invoice_id)?.voidPayment
-    const off = p.status === 'voided' || voidedByCancel ? 'voided' : null
+    if (paymentWasRefused(e, p)) continue
+    const off = paymentIsVoided(e, p) ? 'voided' : null
     entries.push({
       kind: 'payment',
       at: p.paid_at,

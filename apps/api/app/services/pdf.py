@@ -5,6 +5,7 @@ request (SPEC section 17). WeasyPrint itself is imported on first use: it needs 
 (present in the Docker image and on CI), and nothing else in the API should fail to start on a
 machine that lacks them."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -55,3 +56,20 @@ def render_pdf(template: str, doc: dict[str, Any], labels: str) -> bytes:
     html = render_html(template, doc, labels)
     content: bytes = HTML(string=html, base_url=str(_TEMPLATES)).write_pdf(font_config=_font_config)
     return content
+
+
+def warm_up() -> None:
+    """Renders a tiny statement so the first real PDF doesn't pay for loading WeasyPrint, pango and
+    the fonts (seen to take over 30 s on a loaded machine right after the container started).
+    Never raises: a machine without pango just keeps working without PDFs."""
+    try:
+        doc = {
+            "business": {"name": "-", "phone": "", "footer": "", "logo_url": None},
+            "customer": {"name": "-", "shop_name": None, "phone": None},
+            "period": {"from": "01/01/2026", "to": "01/01/2026"},
+            "rows": [],
+            "totals": {"debit": "₪ 0.00", "credit": "₪ 0.00", "closing": "₪ 0.00"},
+        }
+        render_pdf("statement.html", doc, "statement")
+    except Exception:  # noqa: BLE001 - a warm-up must never stop the API from starting
+        logging.getLogger(__name__).warning("PDF warm-up skipped", exc_info=True)

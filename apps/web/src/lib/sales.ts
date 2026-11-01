@@ -2,13 +2,16 @@ import { db, type DbInvoice, type DbInvoiceLine, type DbPayment } from '../db'
 import { allocateDiscount, invoiceTotals, lineTotal } from './billing'
 import { clearCart } from './cart'
 import { takeNumber } from './counters'
+import { hebronDay } from './date'
 import { normalizeArabic } from './normalize'
 import type {
   CancelPayload,
   CustomerPayload,
   InvoiceCreatePayload,
   MarkDeliveredPayload,
+  PaymentCreatePayload,
   PaymentMethod,
+  PaymentVoidPayload,
 } from './sync/commands'
 import { syncNow } from './sync/engine'
 import { effectiveStock, pendingStock } from './sync/effectiveStock'
@@ -28,6 +31,9 @@ export class SaleError extends Error {
       | 'BAD_DISCOUNT'
       | 'BAD_PAYMENT'
       | 'CHEQUE_NOTE'
+      | 'NO_REASON'
+      | 'UNKNOWN_PAYMENT'
+      | 'UNKNOWN_CUSTOMER'
       | 'UNKNOWN_VARIANT',
     readonly variantId?: string,
     readonly available?: number,
@@ -281,6 +287,12 @@ export async function cancelInvoice(
   if (!invoice) return
   const lines = await db.invoice_lines.where('invoice_id').equals(invoiceId).toArray()
   const payments = await db.payments.where('invoice_id').equals(invoiceId).toArray()
+  // A payment the rep already voided (command still waiting) is not there to give back again.
+  const voidedByWaiting = new Set(
+    (await pendingCommands())
+      .filter((c) => c.type === 'payment.void')
+      .map((c) => (c.payload as PaymentVoidPayload).payment_id),
+  )
   const payload: CancelPayload = {
     invoice_id: invoiceId,
     cancelled_at: new Date().toISOString(),
@@ -289,10 +301,90 @@ export async function cancelInvoice(
     customer_id: invoice.customer_id,
     total: invoice.total,
     payment_amount: payments
-      .filter((p) => p.status === 'active')
+      .filter((p) => p.status === 'active' && !voidedByWaiting.has(p.id))
       .reduce((sum, p) => sum + p.amount, 0),
     lines: lines.map((l) => ({ variant_id: l.variant_id, qty: l.qty })),
   }
   await enqueue('invoice.cancel', payload)
+  void syncNow()
+}
+
+export interface PaymentInput {
+  customerId: string
+  /** Agorot, more than zero. More than he owes is fine: it becomes credit. */
+  amount: number
+  method: PaymentMethod
+  note?: string
+  /** `yyyy-MM-dd` in Hebron time; today when left out. */
+  day?: string
+}
+
+/** Records money received with no new order (SPEC F10). Saved at once, queued, never waits for the
+ * network. A cheque needs its number, bank and date in the note. */
+export async function recordPayment(
+  input: PaymentInput,
+): Promise<{ paymentId: string; number: string }> {
+  if (!Number.isInteger(input.amount) || input.amount <= 0) throw new SaleError('BAD_PAYMENT')
+  if (input.method === 'cheque' && !clean(input.note)) throw new SaleError('CHEQUE_NOTE')
+  const paymentId = uuid7()
+  const number = await db.transaction(
+    'rw',
+    [db.outbox, db.payments, db.customers, db.meta],
+    async () => {
+      if (!(await db.customers.get(input.customerId))) throw new SaleError('UNKNOWN_CUSTOMER')
+      const number = await takeNumber('REC')
+      const paidAt = paidAtFor(input.day)
+      const payload: PaymentCreatePayload = {
+        payment_id: paymentId,
+        number,
+        customer_id: input.customerId,
+        paid_at: paidAt,
+        amount: input.amount,
+        method: input.method,
+        note: clean(input.note),
+      }
+      const payment: DbPayment = {
+        id: paymentId,
+        number,
+        customer_id: input.customerId,
+        invoice_id: null,
+        method: input.method,
+        amount: input.amount,
+        paid_at: paidAt,
+        note: payload.note,
+        status: 'active',
+        voided_at: null,
+        void_reason: null,
+        change_seq: 0,
+      }
+      await db.payments.put(payment)
+      await enqueue('payment.create', payload)
+      return number
+    },
+  )
+  void syncNow()
+  return { paymentId, number }
+}
+
+/** The moment to store for a payment dated `day`: now when it is today, else noon of that day. */
+function paidAtFor(day: string | undefined): string {
+  const now = new Date()
+  if (!day || day === hebronDay(now.toISOString())) return now.toISOString()
+  return new Date(`${day}T12:00:00+02:00`).toISOString()
+}
+
+/** Voids a payment recorded by mistake: it stays on record, marked voided, with the reason. */
+export async function voidPayment(paymentId: string, reason: string): Promise<void> {
+  if (!clean(reason)) throw new SaleError('NO_REASON')
+  const payment = await db.payments.get(paymentId)
+  if (!payment) throw new SaleError('UNKNOWN_PAYMENT')
+  const payload: PaymentVoidPayload = {
+    payment_id: paymentId,
+    voided_at: new Date().toISOString(),
+    reason: reason.trim(),
+    customer_id: payment.customer_id,
+    amount: payment.amount,
+  }
+  await enqueue('payment.void', payload)
   void syncNow()
 }

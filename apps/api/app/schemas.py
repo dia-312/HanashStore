@@ -431,6 +431,21 @@ class PaymentIn(BaseModel):
         return self
 
 
+class PaymentCreatePayload(PaymentIn):
+    """payment.create: money received with no new order (paying off old debt, SPEC F10)."""
+
+    customer_id: uuid.UUID
+    paid_at: datetime  # the device clock when the rep recorded it
+
+
+class PaymentVoidPayload(BaseModel):
+    """payment.void: a payment recorded by mistake. It stays on record, marked voided."""
+
+    payment_id: uuid.UUID
+    voided_at: datetime
+    reason: Note
+
+
 class InvoiceLineIn(BaseModel):
     line_id: uuid.UUID
     variant_id: uuid.UUID

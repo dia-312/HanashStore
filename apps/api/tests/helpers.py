@@ -159,3 +159,33 @@ def sell(
     api: TestClient, customer_id: str, lines: list[tuple[str, int, int]], **extra: Any
 ) -> dict[str, Any]:
     return push_one(api, invoice_cmd(customer_id, lines, **extra))
+
+
+def payment_cmd(
+    customer_id: str,
+    amount: int,
+    *,
+    method: str = "cash",
+    note: str | None = None,
+    number: str | None = None,
+    paid_at: str = "2026-11-03T10:00:00Z",
+    payment_id: str | None = None,
+) -> dict[str, Any]:
+    payload = {
+        "payment_id": payment_id or str(uuid.uuid4()),
+        "number": number or next_number("REC"),
+        "customer_id": customer_id,
+        "paid_at": paid_at,
+        "amount": amount,
+        "method": method,
+        "note": note,
+    }
+    return command("payment.create", payload)
+
+
+def void_cmd(
+    payment_id: str, reason: str = "سجلتها بالغلط", voided_at: str = "2026-11-03T11:00:00Z"
+) -> dict[str, Any]:
+    return command(
+        "payment.void", {"payment_id": payment_id, "voided_at": voided_at, "reason": reason}
+    )
