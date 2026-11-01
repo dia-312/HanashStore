@@ -6,6 +6,7 @@ import {
   invoiceTotals,
   lineTotal,
   remainingOnInvoice,
+  returnLineAmount,
 } from './billing'
 
 describe('billing rules match the shared fixtures (same file the server is tested with)', () => {
@@ -22,6 +23,18 @@ describe('billing rules match the shared fixtures (same file the server is teste
 
   it.each(cases.remaining)('remaining on $total after paying $paid', (c) => {
     expect(remainingOnInvoice(c.total, c.paid)).toBe(c.remaining)
+  })
+
+  it.each(cases.returns)('return amounts of $picks on a $sold unit line', (c) => {
+    let qty = 0
+    let amount = 0
+    const got = c.picks.map((pick) => {
+      const a = returnLineAmount(c.line_total, c.discount_share, c.sold, qty, amount, pick)
+      qty += pick
+      amount += a
+      return a
+    })
+    expect(got).toEqual(c.amounts)
   })
 
   it.each(cases.balance)('balance with opening $opening', (c) => {

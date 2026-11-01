@@ -4,6 +4,8 @@ import {
   type DbInvoice,
   type DbInvoiceLine,
   type DbPayment,
+  type DbReturn,
+  type DbReturnLine,
   type OutboxRow,
 } from '../db'
 import { remainingOnInvoice } from './billing'
@@ -14,6 +16,7 @@ import type {
   MarkDeliveredPayload,
   PaymentCreatePayload,
   PaymentVoidPayload,
+  ReturnCreatePayload,
 } from './sync/commands'
 import { pendingBalances } from './sync/effectiveBalance'
 
@@ -24,19 +27,23 @@ export interface SalesSnapshot {
   invoices: DbInvoice[]
   lines: DbInvoiceLine[]
   payments: DbPayment[]
+  returns: DbReturn[]
+  returnLines: DbReturnLine[]
   /** Pending and rejected commands, oldest first. */
   outbox: OutboxRow[]
 }
 
 export async function loadSalesSnapshot(): Promise<SalesSnapshot> {
-  const [customers, invoices, lines, payments, outbox] = await Promise.all([
+  const [customers, invoices, lines, payments, returns, returnLines, outbox] = await Promise.all([
     db.customers.toArray(),
     db.invoices.toArray(),
     db.invoice_lines.toArray(),
     db.payments.toArray(),
+    db.returns.toArray(),
+    db.return_lines.toArray(),
     db.outbox.orderBy('seq').toArray(),
   ])
-  return { customers, invoices, lines, payments, outbox }
+  return { customers, invoices, lines, payments, returns, returnLines, outbox }
 }
 
 const collator = new Intl.Collator('ar')
@@ -142,6 +149,8 @@ export interface Effects {
   voided: Map<string, string>
   /** Standalone payments made on this device: how far they have got. */
   paymentCreation: Map<string, SendState>
+  /** Returns made on this device: how far they have got. */
+  returnCreation: Map<string, SendState>
 }
 
 /** What waiting commands say about each invoice: cancelled, delivered, and not yet confirmed. */
@@ -152,11 +161,14 @@ export function saleEffects(s: SalesSnapshot): Effects {
     creation: new Map(),
     voided: new Map(),
     paymentCreation: new Map(),
+    returnCreation: new Map(),
   }
   for (const c of s.outbox) {
     const state: SendState = c.status === 'rejected' ? 'rejected' : 'pending'
     if (c.type === 'invoice.create') {
       out.creation.set((c.payload as InvoiceCreatePayload).invoice_id, state)
+    } else if (c.type === 'return.create') {
+      out.returnCreation.set((c.payload as ReturnCreatePayload).return_id, state)
     } else if (c.type === 'payment.create') {
       out.paymentCreation.set((c.payload as PaymentCreatePayload).payment_id, state)
     } else if (c.status === 'pending' && c.type === 'payment.void') {
@@ -183,6 +195,49 @@ export function paymentIsVoided(e: Effects, p: DbPayment): boolean {
 export function paymentWasRefused(e: Effects, p: DbPayment): boolean {
   if (e.paymentCreation.get(p.id) === 'rejected') return true
   return p.invoice_id !== null && e.creation.get(p.invoice_id) === 'rejected'
+}
+
+/** A return the server refused: it never counted anywhere. */
+export function returnWasRefused(e: Effects, r: DbReturn): boolean {
+  return e.returnCreation.get(r.id) === 'rejected'
+}
+
+/** For each invoice line: units already taken back and the credit already given, leaving out any
+ * return the server refused (those never counted). Waiting returns count: they are real here. */
+export function returnedByLine(s: SalesSnapshot): Map<string, { qty: number; amount: number }> {
+  const e = saleEffects(s)
+  const refused = new Set(s.returns.filter((r) => returnWasRefused(e, r)).map((r) => r.id))
+  const out = new Map<string, { qty: number; amount: number }>()
+  for (const line of s.returnLines) {
+    if (refused.has(line.return_id)) continue
+    const seen = out.get(line.invoice_line_id) ?? { qty: 0, amount: 0 }
+    out.set(line.invoice_line_id, { qty: seen.qty + line.qty, amount: seen.amount + line.amount })
+  }
+  return out
+}
+
+export interface ReturnableLine {
+  line: DbInvoiceLine
+  returned: number
+  creditedSoFar: number
+  remaining: number
+}
+
+/** The lines of an invoice with how much of each can still come back. */
+export function returnableLines(s: SalesSnapshot, invoiceId: string): ReturnableLine[] {
+  const done = returnedByLine(s)
+  return s.lines
+    .filter((l) => l.invoice_id === invoiceId)
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .map((line) => {
+      const seen = done.get(line.id) ?? { qty: 0, amount: 0 }
+      return {
+        line,
+        returned: seen.qty,
+        creditedSoFar: seen.amount,
+        remaining: line.qty - seen.qty,
+      }
+    })
 }
 
 function paidOn(s: SalesSnapshot, e: Effects, invoiceId: string): number {
@@ -238,6 +293,69 @@ export interface InvoiceDetail extends InvoiceItem {
   hasActivePayment: boolean
   /** A cancellation is waiting to be sent: the server's PDF would not show it yet. */
   cancelPending: boolean
+  /** Returns taken from this invoice, oldest first. Refused ones are left out. */
+  returns: ReturnItem[]
+  /** Something can still come back: confirmed, not being cancelled, units left on a line. */
+  canReturn: boolean
+}
+
+export interface ReturnItem {
+  id: string
+  number: string
+  invoice_id: string
+  invoice_number: string
+  total: number
+  issued_at: string
+  reason: string | null
+  sendState: SendState
+  lines: {
+    product_name: string
+    variant_label: string
+    qty: number
+    disposition: DbReturnLine['disposition']
+    amount: number
+  }[]
+}
+
+/** The returns of a customer (or of one invoice), newest first, leaving out the refused. */
+export function buildReturnList(
+  s: SalesSnapshot,
+  filter: { customerId?: string; invoiceId?: string },
+): ReturnItem[] {
+  const e = saleEffects(s)
+  const numbers = new Map(s.invoices.map((i) => [i.id, i.number]))
+  const lineById = new Map(s.lines.map((l) => [l.id, l]))
+  const items: ReturnItem[] = []
+  for (const r of s.returns) {
+    if (filter.customerId && r.customer_id !== filter.customerId) continue
+    if (filter.invoiceId && r.invoice_id !== filter.invoiceId) continue
+    if (returnWasRefused(e, r)) continue
+    items.push({
+      id: r.id,
+      number: r.number,
+      invoice_id: r.invoice_id,
+      invoice_number: numbers.get(r.invoice_id) ?? '',
+      total: r.total,
+      issued_at: r.issued_at,
+      reason: r.reason,
+      sendState: e.returnCreation.get(r.id) ?? 'synced',
+      lines: s.returnLines
+        .filter((l) => l.return_id === r.id)
+        .map((l) => {
+          const sold = lineById.get(l.invoice_line_id)
+          return {
+            product_name: sold?.product_name ?? '',
+            variant_label: sold?.variant_label ?? '',
+            qty: l.qty,
+            disposition: l.disposition,
+            amount: l.amount,
+          }
+        }),
+    })
+  }
+  return items.sort(
+    (a, b) => b.issued_at.localeCompare(a.issued_at) || b.number.localeCompare(a.number),
+  )
 }
 
 export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): InvoiceDetail | null {
@@ -256,6 +374,7 @@ export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): Invoice
   const payments = s.payments
     .filter((p) => p.invoice_id === invoiceId)
     .map((p): DbPayment => (paymentIsVoided(e, p) ? { ...p, status: 'voided' } : p))
+  const returns = buildReturnList(s, { invoiceId })
   return {
     ...item,
     subtotal: inv.subtotal,
@@ -275,9 +394,15 @@ export function buildInvoiceDetail(s: SalesSnapshot, invoiceId: string): Invoice
       .sort((a, b) => a.sort_order - b.sort_order),
     payments,
     rejectedCode: rejected?.error?.code ?? null,
-    canCancel: item.status === 'confirmed' && item.sendState !== 'rejected',
+    // An invoice with returns can't be cancelled (SPEC section 7): cancel it first or return.
+    canCancel: item.status === 'confirmed' && item.sendState !== 'rejected' && returns.length === 0,
     hasActivePayment: payments.some((p) => p.status === 'active'),
     cancelPending: e.cancelled.has(inv.id),
+    returns,
+    canReturn:
+      item.status === 'confirmed' &&
+      item.sendState !== 'rejected' &&
+      returnableLines(s, invoiceId).some((l) => l.remaining > 0),
   }
 }
 
@@ -287,6 +412,7 @@ export interface CustomerProfile extends CustomerItem {
   opening_balance: number
   invoices: InvoiceItem[]
   payments: PaymentItem[]
+  returns: ReturnItem[]
 }
 
 export interface PaymentItem {
@@ -350,5 +476,6 @@ export function buildCustomerProfile(s: SalesSnapshot, customerId: string): Cust
     opening_balance: customer.opening_balance,
     invoices: buildInvoiceList(s, { customerId }),
     payments: buildPaymentList(s, customerId),
+    returns: buildReturnList(s, { customerId }),
   }
 }

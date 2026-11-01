@@ -12,14 +12,26 @@ export function formatMoney(agorot: number): string {
 }
 
 const ARABIC_DIGITS = /[\u0660-\u0669\u06F0-\u06F9]/g
+/** The Latin digits of what was typed: the iPad's Arabic keyboard types ٠١٢٣, not 0123. */
+export const latinDigits = (text: string) =>
+  text.replace(ARABIC_DIGITS, (c) => String((c.charCodeAt(0) - 0x0660) % 0x90))
+
+/** What was typed without spaces and without the invisible direction marks (U+200E, U+200F,
+ * U+2066 to U+2069, U+061C...) that Safari on the iPad can put in a field on an Arabic page. */
+export const typedText = (text: string) => latinDigits(text).replace(/[\p{Cf}\s]/gu, '')
+
+/** A whole number of units typed by the rep ("3", "٣", " 12 "), or null if it isn't one. */
+export function parseCount(input: string): number | null {
+  const text = typedText(input)
+  return /^\d{1,9}$/.test(text) ? Number(text) : null
+}
+
 export const MAX_AGOROT = 10_000_000 * 100 // SPEC section 13: up to 10,000,000 ILS
 
 /** What the user typed ("12.5", "١٢٫٥٠", "1,250.00") to integer agorot, or null if it isn't a price.
  * Pure string math, no floats (SPEC section 7); at most two decimals. */
 export function parseMoney(input: string): number | null {
-  let text = input
-    .trim()
-    .replace(ARABIC_DIGITS, (c) => String((c.charCodeAt(0) - 0x0660) % 0x90))
+  let text = typedText(input)
     .replace(/٫/g, '.')
     .replace(/٬/g, ',')
     .replace(/[\s\u00a0]/g, '')

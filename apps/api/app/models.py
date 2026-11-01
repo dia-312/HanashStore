@@ -284,3 +284,40 @@ class Payment(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     change_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class Return(Base):
+    __tablename__ = "returns"
+    __table_args__ = (CheckConstraint("total >= 0", name="return_total_nonnegative"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    number: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id"), nullable=False)
+    invoice_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("invoices.id"), nullable=False)
+    reason: Mapped[str | None] = mapped_column(Text)
+    total: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    device_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("devices.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    change_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+
+
+class ReturnLine(Base):
+    __tablename__ = "return_lines"
+    __table_args__ = (
+        CheckConstraint("qty > 0", name="return_line_qty_positive"),
+        CheckConstraint("amount >= 0", name="return_line_amount_nonnegative"),
+        CheckConstraint(
+            "disposition in ('restock','damaged')", name="return_line_disposition_known"
+        ),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
+    return_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("returns.id"), nullable=False)
+    invoice_line_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("invoice_lines.id"), nullable=False
+    )
+    qty: Mapped[int] = mapped_column(Integer, nullable=False)
+    disposition: Mapped[str] = mapped_column(String, nullable=False)
+    amount: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    change_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)

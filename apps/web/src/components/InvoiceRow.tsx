@@ -26,13 +26,16 @@ export function InvoiceTags({ invoice }: { invoice: InvoiceItem }) {
 export const InvoiceRow = memo(function InvoiceRow({
   invoice,
   showCustomer = true,
+  to,
 }: {
   invoice: InvoiceItem
   showCustomer?: boolean
+  /** Where the row leads; the invoice itself by default. */
+  to?: string
 }) {
   return (
     <Link
-      to={`/invoices/${invoice.id}`}
+      to={to ?? `/invoices/${invoice.id}`}
       className={`grid min-h-20 gap-2 rounded-xl bg-white p-3 md:grid-cols-[1fr_auto] md:items-center ${
         invoice.status === 'cancelled' ? 'opacity-70' : ''
       }`}

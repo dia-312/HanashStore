@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 
 from app import clock
 from app.audit import audit
-from app.models import Customer, Invoice, Payment
+from app.models import Customer, Invoice, Payment, Return
 from app.normalize import normalize_arabic
 from app.services import billing
 
@@ -19,13 +19,13 @@ def search_text(customer: Customer) -> str:
 
 
 def balance_of(db: Session, customer_id: uuid.UUID) -> int:
-    """opening + confirmed invoices - returns - active payments. Returns arrive in M7."""
+    """opening + confirmed invoices - returns - active payments (SPEC section 7)."""
     opening = db.scalar(select(Customer.opening_balance).where(Customer.id == customer_id)) or 0
     return _balances(db, [customer_id]).get(customer_id, opening)
 
 
 def _balances(db: Session, customer_ids: list[uuid.UUID]) -> dict[uuid.UUID, int]:
-    """Balances of several customers with three aggregate queries, not one query per customer."""
+    """Balances of several customers with four aggregate queries, not one query per customer."""
     if not customer_ids:
         return {}
     invoices = {
@@ -44,6 +44,14 @@ def _balances(db: Session, customer_ids: list[uuid.UUID]) -> dict[uuid.UUID, int
             .group_by(Payment.customer_id)
         )
     }
+    returns = {
+        row[0]: row[1]
+        for row in db.execute(
+            select(Return.customer_id, func.sum(Return.total))
+            .where(Return.customer_id.in_(customer_ids))
+            .group_by(Return.customer_id)
+        )
+    }
     openings = {
         row[0]: row[1]
         for row in db.execute(
@@ -52,7 +60,10 @@ def _balances(db: Session, customer_ids: list[uuid.UUID]) -> dict[uuid.UUID, int
     }
     return {
         cid: billing.customer_balance(
-            openings.get(cid, 0), int(invoices.get(cid, 0)), 0, int(payments.get(cid, 0))
+            openings.get(cid, 0),
+            int(invoices.get(cid, 0)),
+            int(returns.get(cid, 0)),
+            int(payments.get(cid, 0)),
         )
         for cid in customer_ids
     }

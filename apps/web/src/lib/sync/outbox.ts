@@ -7,6 +7,7 @@ import {
   type CustomerPayload,
   type InvoiceCreatePayload,
   type PaymentCreatePayload,
+  type ReturnCreatePayload,
 } from './commands'
 
 /** Every write the rep makes in the field becomes a command here first (SPEC section 8). */
@@ -41,7 +42,15 @@ export async function markRejected(id: string, error: CommandError): Promise<voi
 export async function discard(id: string): Promise<void> {
   await db.transaction(
     'rw',
-    [db.outbox, db.invoices, db.invoice_lines, db.payments, db.customers],
+    [
+      db.outbox,
+      db.invoices,
+      db.invoice_lines,
+      db.payments,
+      db.customers,
+      db.returns,
+      db.return_lines,
+    ],
     async () => {
       const command = await db.outbox.where('id').equals(id).first()
       if (command?.type === 'invoice.create') {
@@ -66,6 +75,18 @@ export async function discard(id: string): Promise<void> {
           .equals(p.payment_id)
           .and((x) => x.change_seq === 0)
           .delete()
+      } else if (command?.type === 'return.create') {
+        const p = command.payload as ReturnCreatePayload
+        await db.return_lines
+          .where('return_id')
+          .equals(p.return_id)
+          .and((x) => x.change_seq === 0)
+          .delete()
+        await db.returns
+          .where('id')
+          .equals(p.return_id)
+          .and((x) => x.change_seq === 0)
+          .delete()
       } else if (command?.type === 'customer.upsert') {
         const p = command.payload as CustomerPayload
         await db.customers
@@ -85,27 +106,35 @@ export async function discard(id: string): Promise<void> {
  * because a rejected command left nothing behind.
  */
 export async function retry(id: string): Promise<void> {
-  await db.transaction('rw', [db.outbox, db.invoices, db.payments, db.meta], async () => {
-    const old = await db.outbox.where('id').equals(id).first()
-    if (!old || old.status !== 'rejected') return
-    let payload = old.payload
-    if (old.type === 'invoice.create' && old.error?.code === 'DUPLICATE_NUMBER') {
-      payload = await withFreshNumber(payload as InvoiceCreatePayload, old.error.details.number)
-    } else if (old.type === 'payment.create' && old.error?.code === 'DUPLICATE_NUMBER') {
-      const number = await takeNumber('REC')
-      payload = { ...(payload as PaymentCreatePayload), number }
-      await db.payments.update((payload as PaymentCreatePayload).payment_id, { number })
-    }
-    await db.outbox.where('id').equals(id).delete()
-    await db.outbox.add({
-      id: uuid7(),
-      type: old.type,
-      schema_version: old.schema_version,
-      payload,
-      created_at: new Date().toISOString(),
-      status: 'pending',
-    })
-  })
+  await db.transaction(
+    'rw',
+    [db.outbox, db.invoices, db.payments, db.returns, db.meta],
+    async () => {
+      const old = await db.outbox.where('id').equals(id).first()
+      if (!old || old.status !== 'rejected') return
+      let payload = old.payload
+      if (old.type === 'invoice.create' && old.error?.code === 'DUPLICATE_NUMBER') {
+        payload = await withFreshNumber(payload as InvoiceCreatePayload, old.error.details.number)
+      } else if (old.type === 'payment.create' && old.error?.code === 'DUPLICATE_NUMBER') {
+        const number = await takeNumber('REC')
+        payload = { ...(payload as PaymentCreatePayload), number }
+        await db.payments.update((payload as PaymentCreatePayload).payment_id, { number })
+      } else if (old.type === 'return.create' && old.error?.code === 'DUPLICATE_NUMBER') {
+        const number = await takeNumber('RET')
+        payload = { ...(payload as ReturnCreatePayload), number }
+        await db.returns.update((payload as ReturnCreatePayload).return_id, { number })
+      }
+      await db.outbox.where('id').equals(id).delete()
+      await db.outbox.add({
+        id: uuid7(),
+        type: old.type,
+        schema_version: old.schema_version,
+        payload,
+        created_at: new Date().toISOString(),
+        status: 'pending',
+      })
+    },
+  )
 }
 
 /** The server already had this document number (should never happen): take the next one, on the

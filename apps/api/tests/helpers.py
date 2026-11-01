@@ -111,7 +111,7 @@ def customer(api: TestClient, name: str = "محل النور", **extra: Any) -> 
     return str(cmd["payload"]["customer_id"])
 
 
-_NUMBERS = {"INV": 0, "REC": 0}
+_NUMBERS = {"INV": 0, "REC": 0, "RET": 0}
 
 
 def next_number(kind: str) -> str:
@@ -189,3 +189,33 @@ def void_cmd(
     return command(
         "payment.void", {"payment_id": payment_id, "voided_at": voided_at, "reason": reason}
     )
+
+
+def return_cmd(
+    sale: dict[str, Any],
+    picks: list[tuple[int, int, str]],
+    *,
+    reason: str | None = "رجّعها الزبون",
+    number: str | None = None,
+    issued_at: str = "2026-11-04T10:00:00Z",
+    return_id: str | None = None,
+) -> dict[str, Any]:
+    """`sale` is an invoice.create command; picks are (line index, qty, 'restock' | 'damaged')."""
+    lines = sale["payload"]["lines"]
+    payload = {
+        "return_id": return_id or str(uuid.uuid4()),
+        "number": number or next_number("RET"),
+        "invoice_id": sale["payload"]["invoice_id"],
+        "issued_at": issued_at,
+        "reason": reason,
+        "lines": [
+            {
+                "return_line_id": str(uuid.uuid4()),
+                "invoice_line_id": lines[index]["line_id"],
+                "qty": qty,
+                "disposition": disposition,
+            }
+            for index, qty, disposition in picks
+        ],
+    }
+    return command("return.create", payload)

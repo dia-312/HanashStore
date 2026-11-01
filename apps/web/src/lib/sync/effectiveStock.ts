@@ -5,6 +5,7 @@ import type {
   DamagePayload,
   InvoiceCreatePayload,
   PurchasePayload,
+  ReturnCreatePayload,
 } from './commands'
 
 type PendingCommand = Pick<OutboxRow, 'type' | 'payload' | 'status'>
@@ -42,6 +43,12 @@ export function pendingStock(
       for (const line of (command.payload as InvoiceCreatePayload).lines) {
         const qty = get(line.variant_id)
         if (qty !== undefined) current.set(line.variant_id, qty - line.qty)
+      }
+    } else if (command.type === 'return.create') {
+      for (const line of (command.payload as ReturnCreatePayload).lines) {
+        if (line.disposition !== 'restock') continue
+        const qty = get(line.variant_id)
+        if (qty !== undefined) current.set(line.variant_id, qty + line.qty)
       }
     } else if (command.type === 'invoice.cancel') {
       for (const line of (command.payload as CancelPayload).lines) {

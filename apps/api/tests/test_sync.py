@@ -47,6 +47,8 @@ def test_pull_on_an_empty_server(api: TestClient) -> None:
             "invoices": [],
             "invoice_lines": [],
             "payments": [],
+            "returns": [],
+            "return_lines": [],
         },
         "cursor": 0,
         "has_more": False,

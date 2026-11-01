@@ -2,11 +2,11 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import { db, setMeta, wipeLocalData } from '../db'
 import { buildStatement } from './documents'
 import { effectiveBalances, loadSalesSnapshot } from './localSales'
-import { cancelInvoice, confirmSale, recordPayment, voidPayment } from './sales'
+import { cancelInvoice, confirmSale, createReturn, recordPayment, voidPayment } from './sales'
 
-// SPEC milestone 6, done when: "statement totals equal the balance formula". The server side of
-// this is apps/api/tests/test_payments.py; this is the device: a random mix of sales, payments,
-// voids and cancellations made offline, then the balance worked out from the rules written out
+// SPEC milestones 6 and 7, done when: "statement totals equal the balance formula". The server
+// side of this is apps/api/tests/test_payments.py and test_returns.py; this is the device: a random
+// mix of sales, payments, voids, cancellations and partial returns made offline, then the balance worked out from the rules written out
 // again here, compared with the balance on screen and with the statement.
 
 const mulberry = (seed: number) => () => {
@@ -59,14 +59,24 @@ async function randomHistory(seed: number, opening: number) {
     balance: opening,
     change_seq: 1,
   })
-  const sales: { id: string; total: number; paymentId: string | null; paid: number }[] = []
+  const sales: {
+    id: string
+    lineId: string
+    qty: number
+    total: number
+    paymentId: string | null
+    paid: number
+    returned: number
+    credited: number
+  }[] = []
+  let creditedTotal = 0
   const standalone: { id: string; amount: number }[] = []
   const cancelled = new Set<string>()
   const cancelledWithVoid = new Set<string>()
   const voided = new Set<string>()
 
   for (let step = 0; step < 14; step++) {
-    const kind = pick(['sale', 'sale', 'pay', 'pay', 'void', 'cancel'])
+    const kind = pick(['sale', 'sale', 'pay', 'pay', 'void', 'cancel', 'return', 'return'])
     if (kind === 'sale') {
       const qty = 1 + Math.floor(random() * 4)
       const paid = pick([0, 0, 500, 3000])
@@ -79,7 +89,17 @@ async function randomHistory(seed: number, opening: number) {
       })
       const invoice = (await db.invoices.get(invoiceId))!
       const payment = (await db.payments.where('invoice_id').equals(invoiceId).first()) ?? null
-      sales.push({ id: invoiceId, total: invoice.total, paymentId: payment?.id ?? null, paid })
+      const line = (await db.invoice_lines.where('invoice_id').equals(invoiceId).first())!
+      sales.push({
+        id: invoiceId,
+        lineId: line.id,
+        qty,
+        total: invoice.total,
+        paymentId: payment?.id ?? null,
+        paid,
+        returned: 0,
+        credited: 0,
+      })
     } else if (kind === 'pay') {
       const amount = pick([400, 1000, 8000])
       const { paymentId } = await recordPayment({ customerId: 'c', amount, method: 'cash' })
@@ -95,8 +115,27 @@ async function randomHistory(seed: number, opening: number) {
       const id = pick(candidates)
       await voidPayment(id, 'خطأ')
       voided.add(id)
+    } else if (kind === 'return') {
+      const open = sales.filter((s) => !cancelled.has(s.id) && s.returned < s.qty)
+      if (open.length === 0) continue
+      const sale = pick(open)
+      const qty = 1 + Math.floor(random() * (sale.qty - sale.returned))
+      const { total } = await createReturn({
+        invoiceId: sale.id,
+        lines: [
+          {
+            invoiceLineId: sale.lineId,
+            qty,
+            disposition: pick(['restock', 'damaged'] as const),
+          },
+        ],
+      })
+      sale.returned += qty
+      sale.credited += total
+      creditedTotal += total
     } else {
-      const open = sales.filter((s) => !cancelled.has(s.id))
+      // an invoice with returns can't be cancelled, on the server or here
+      const open = sales.filter((s) => !cancelled.has(s.id) && s.returned === 0)
       if (open.length === 0) continue
       const sale = pick(open)
       const withVoid = random() < 0.5
@@ -115,6 +154,9 @@ async function randomHistory(seed: number, opening: number) {
     if (paymentCounts) expected -= sale.paid
   }
   for (const payment of standalone) if (!voided.has(payment.id)) expected -= payment.amount
+  expected -= creditedTotal
+  // a sale returned in full was credited exactly what it came to, however many parts it took
+  for (const sale of sales) if (sale.returned === sale.qty) expect(sale.credited).toBe(sale.total)
   return expected
 }
 

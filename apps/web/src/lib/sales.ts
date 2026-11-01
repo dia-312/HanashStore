@@ -1,17 +1,27 @@
-import { db, type DbInvoice, type DbInvoiceLine, type DbPayment } from '../db'
-import { allocateDiscount, invoiceTotals, lineTotal } from './billing'
+import {
+  db,
+  type DbInvoice,
+  type DbInvoiceLine,
+  type DbPayment,
+  type DbReturn,
+  type DbReturnLine,
+} from '../db'
+import { allocateDiscount, invoiceTotals, lineTotal, returnLineAmount } from './billing'
 import { clearCart } from './cart'
 import { takeNumber } from './counters'
 import { hebronDay } from './date'
+import { loadSalesSnapshot, returnableLines, saleEffects } from './localSales'
 import { normalizeArabic } from './normalize'
 import type {
   CancelPayload,
   CustomerPayload,
+  Disposition,
   InvoiceCreatePayload,
   MarkDeliveredPayload,
   PaymentCreatePayload,
   PaymentMethod,
   PaymentVoidPayload,
+  ReturnCreatePayload,
 } from './sync/commands'
 import { syncNow } from './sync/engine'
 import { effectiveStock, pendingStock } from './sync/effectiveStock'
@@ -34,7 +44,12 @@ export class SaleError extends Error {
       | 'NO_REASON'
       | 'UNKNOWN_PAYMENT'
       | 'UNKNOWN_CUSTOMER'
-      | 'UNKNOWN_VARIANT',
+      | 'UNKNOWN_VARIANT'
+      | 'UNKNOWN_INVOICE'
+      | 'INVOICE_CANCELLED'
+      | 'HAS_RETURNS'
+      | 'EMPTY_RETURN'
+      | 'BAD_RETURN_QTY',
     readonly variantId?: string,
     readonly available?: number,
   ) {
@@ -285,6 +300,16 @@ export async function cancelInvoice(
 ): Promise<void> {
   const invoice = await db.invoices.get(invoiceId)
   if (!invoice) return
+  // The server refuses it too: goods already taken back can't be cancelled away.
+  const snapshot = await loadSalesSnapshot()
+  const effects = saleEffects(snapshot)
+  if (
+    snapshot.returns.some(
+      (r) => r.invoice_id === invoiceId && effects.returnCreation.get(r.id) !== 'rejected',
+    )
+  ) {
+    throw new SaleError('HAS_RETURNS')
+  }
   const lines = await db.invoice_lines.where('invoice_id').equals(invoiceId).toArray()
   const payments = await db.payments.where('invoice_id').equals(invoiceId).toArray()
   // A payment the rep already voided (command still waiting) is not there to give back again.
@@ -387,4 +412,111 @@ export async function voidPayment(paymentId: string, reason: string): Promise<vo
   }
   await enqueue('payment.void', payload)
   void syncNow()
+}
+
+export interface ReturnInput {
+  invoiceId: string
+  reason?: string
+  lines: { invoiceLineId: string; qty: number; disposition: Disposition }[]
+}
+
+/**
+ * Takes goods back from a customer (SPEC F11). Checked here against what is on the shelf of the
+ * invoice (units sold minus units already returned, waiting returns included), then saved at once
+ * with the credit worked out by the same rule as the server, and queued. Nothing waits for the
+ * network. Returns the new number and the credit.
+ */
+export async function createReturn(
+  input: ReturnInput,
+): Promise<{ returnId: string; number: string; total: number }> {
+  const returnId = uuid7()
+  const issuedAt = new Date().toISOString()
+  const result = await db.transaction(
+    'rw',
+    [
+      db.outbox,
+      db.invoices,
+      db.invoice_lines,
+      db.customers,
+      db.payments,
+      db.returns,
+      db.return_lines,
+      db.meta,
+    ],
+    async () => {
+      const snapshot = await loadSalesSnapshot()
+      const invoice = snapshot.invoices.find((i) => i.id === input.invoiceId)
+      if (!invoice) throw new SaleError('UNKNOWN_INVOICE')
+      const e = saleEffects(snapshot)
+      if (invoice.status === 'cancelled' || e.cancelled.has(invoice.id)) {
+        throw new SaleError('INVOICE_CANCELLED')
+      }
+      if (e.creation.get(invoice.id) === 'rejected') throw new SaleError('UNKNOWN_INVOICE')
+      if (input.lines.length === 0) throw new SaleError('EMPTY_RETURN')
+      const room = new Map(returnableLines(snapshot, invoice.id).map((r) => [r.line.id, r]))
+      const picked = new Set<string>()
+      const rows = input.lines.map((pick) => {
+        const entry = room.get(pick.invoiceLineId)
+        if (!entry) throw new SaleError('UNKNOWN_INVOICE')
+        if (picked.has(pick.invoiceLineId)) throw new SaleError('BAD_RETURN_QTY')
+        picked.add(pick.invoiceLineId)
+        if (!Number.isInteger(pick.qty) || pick.qty < 1 || pick.qty > entry.remaining) {
+          throw new SaleError('BAD_RETURN_QTY', entry.line.variant_id, entry.remaining)
+        }
+        const amount = returnLineAmount(
+          entry.line.line_total,
+          entry.line.discount_share,
+          entry.line.qty,
+          entry.returned,
+          entry.creditedSoFar,
+          pick.qty,
+        )
+        return { pick, entry, amount, id: uuid7() }
+      })
+      const total = rows.reduce((sum, r) => sum + r.amount, 0)
+      const number = await takeNumber('RET')
+      const payload: ReturnCreatePayload = {
+        return_id: returnId,
+        number,
+        invoice_id: invoice.id,
+        issued_at: issuedAt,
+        reason: clean(input.reason),
+        customer_id: invoice.customer_id,
+        total,
+        lines: rows.map((r) => ({
+          return_line_id: r.id,
+          invoice_line_id: r.entry.line.id,
+          qty: r.pick.qty,
+          disposition: r.pick.disposition,
+          variant_id: r.entry.line.variant_id,
+          amount: r.amount,
+        })),
+      }
+      const header: DbReturn = {
+        id: returnId,
+        number,
+        customer_id: invoice.customer_id,
+        invoice_id: invoice.id,
+        reason: payload.reason,
+        total,
+        issued_at: issuedAt,
+        change_seq: 0,
+      }
+      const lines: DbReturnLine[] = rows.map((r) => ({
+        id: r.id,
+        return_id: returnId,
+        invoice_line_id: r.entry.line.id,
+        qty: r.pick.qty,
+        disposition: r.pick.disposition,
+        amount: r.amount,
+        change_seq: 0,
+      }))
+      await db.returns.put(header)
+      await db.return_lines.bulkPut(lines)
+      await enqueue('return.create', payload)
+      return { number, total }
+    },
+  )
+  void syncNow()
+  return { returnId, ...result }
 }

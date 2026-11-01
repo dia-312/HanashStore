@@ -93,6 +93,28 @@ export interface PaymentVoidPayload {
   amount: number
 }
 
+export type Disposition = 'restock' | 'damaged'
+
+/** The server works out the amounts itself. `customer_id`, `total` and the `variant_id` and
+ * `amount` of each line let this device show the new balance and stock before it answers. */
+export interface ReturnCreatePayload {
+  return_id: string
+  number: string
+  invoice_id: string
+  issued_at: string
+  reason: string | null
+  customer_id: string
+  total: number
+  lines: {
+    return_line_id: string
+    invoice_line_id: string
+    qty: number
+    disposition: Disposition
+    variant_id: string
+    amount: number
+  }[]
+}
+
 export type CommandType =
   | 'stock.purchase'
   | 'stock.damage'
@@ -103,6 +125,7 @@ export type CommandType =
   | 'invoice.cancel'
   | 'payment.create'
   | 'payment.void'
+  | 'return.create'
 
 export interface CommandResult {
   id: string
@@ -135,6 +158,8 @@ export function commandVariantIds(type: string, payload: unknown): string[] {
       return (payload as InvoiceCreatePayload).lines.map((l) => l.variant_id)
     case 'invoice.cancel':
       return (payload as CancelPayload).lines.map((l) => l.variant_id)
+    case 'return.create':
+      return (payload as ReturnCreatePayload).lines.map((l) => l.variant_id)
     default:
       return []
   }
@@ -170,6 +195,13 @@ export function commandEffectOn(
   if (type === 'invoice.cancel') {
     const qty = (payload as CancelPayload).lines
       .filter((l) => l.variant_id === variantId)
+      .reduce((sum, l) => sum + l.qty, 0)
+    return qty > 0 ? { type, qty, counted: false } : null
+  }
+  if (type === 'return.create') {
+    // Damaged goods do not go back on the shelf.
+    const qty = (payload as ReturnCreatePayload).lines
+      .filter((l) => l.variant_id === variantId && l.disposition === 'restock')
       .reduce((sum, l) => sum + l.qty, 0)
     return qty > 0 ? { type, qty, counted: false } : null
   }

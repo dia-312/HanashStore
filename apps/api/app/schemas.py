@@ -338,6 +338,27 @@ class SyncPayment(Out):
     change_seq: int
 
 
+class SyncReturn(Out):
+    id: uuid.UUID
+    number: str
+    customer_id: uuid.UUID
+    invoice_id: uuid.UUID
+    reason: str | None
+    total: int
+    issued_at: datetime
+    change_seq: int
+
+
+class SyncReturnLine(Out):
+    id: uuid.UUID
+    return_id: uuid.UUID
+    invoice_line_id: uuid.UUID
+    qty: int
+    disposition: str
+    amount: int
+    change_seq: int
+
+
 class PullChanges(BaseModel):
     categories: list[SyncCategory]
     products: list[SyncProduct]
@@ -347,6 +368,8 @@ class PullChanges(BaseModel):
     invoices: list[SyncInvoice]
     invoice_lines: list[SyncInvoiceLine]
     payments: list[SyncPayment]
+    returns: list[SyncReturn]
+    return_lines: list[SyncReturnLine]
 
 
 class PullPage(BaseModel):
@@ -492,3 +515,29 @@ class CancelPayload(BaseModel):
     reason: Note
     void_payment: bool = False
     lines: list[CancelLine] = []
+
+
+class ReturnLineIn(BaseModel):
+    return_line_id: uuid.UUID
+    invoice_line_id: uuid.UUID
+    qty: Qty
+    disposition: Literal["restock", "damaged"]
+
+
+class ReturnCreatePayload(BaseModel):
+    """return.create: items a customer gives back from one invoice (SPEC F11). The amounts are
+    worked out by the server; whatever else the device sends for its own preview is ignored."""
+
+    return_id: uuid.UUID
+    number: DocNumber
+    invoice_id: uuid.UUID
+    issued_at: datetime  # the device clock when the rep recorded it
+    reason: Text500 | None = None
+    lines: Annotated[list[ReturnLineIn], Field(min_length=1, max_length=200)]
+
+    @field_validator("number")
+    @classmethod
+    def _return_number(cls, value: str) -> str:
+        if not value.startswith("RET-"):
+            raise ValueError("a return number looks like RET-000007")
+        return value

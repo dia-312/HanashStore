@@ -271,5 +271,113 @@
       "payments": 500,
       "balance": 1500
     }
+  ],
+  "returns": [
+    {
+      "line_total": 9000,
+      "discount_share": 0,
+      "sold": 2,
+      "picks": [
+        1,
+        1
+      ],
+      "amounts": [
+        4500,
+        4500
+      ]
+    },
+    {
+      "line_total": 9000,
+      "discount_share": 1000,
+      "sold": 2,
+      "picks": [
+        1,
+        1
+      ],
+      "amounts": [
+        4000,
+        4000
+      ]
+    },
+    {
+      "line_total": 10000,
+      "discount_share": 3333,
+      "sold": 3,
+      "picks": [
+        1,
+        1,
+        1
+      ],
+      "amounts": [
+        2222,
+        2222,
+        2223
+      ]
+    },
+    {
+      "line_total": 100,
+      "discount_share": 1,
+      "sold": 3,
+      "picks": [
+        2,
+        1
+      ],
+      "amounts": [
+        66,
+        33
+      ]
+    },
+    {
+      "line_total": 100,
+      "discount_share": 1,
+      "sold": 3,
+      "picks": [
+        3
+      ],
+      "amounts": [
+        99
+      ]
+    },
+    {
+      "line_total": 1,
+      "discount_share": 0,
+      "sold": 1,
+      "picks": [
+        1
+      ],
+      "amounts": [
+        1
+      ]
+    },
+    {
+      "line_total": 5000,
+      "discount_share": 5000,
+      "sold": 4,
+      "picks": [
+        1,
+        2,
+        1
+      ],
+      "amounts": [
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "line_total": 10001,
+      "discount_share": 0,
+      "sold": 7,
+      "picks": [
+        3,
+        3,
+        1
+      ],
+      "amounts": [
+        4286,
+        4286,
+        1429
+      ]
+    }
   ]
 }

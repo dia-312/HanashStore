@@ -10,6 +10,8 @@ import {
   type DbInvoiceLine,
   type DbPayment,
   type DbProduct,
+  type DbReturn,
+  type DbReturnLine,
   type DbVariant,
 } from '../../db'
 import { api } from '../api'
@@ -24,6 +26,9 @@ export interface PullPage {
     invoices: DbInvoice[]
     invoice_lines: DbInvoiceLine[]
     payments: DbPayment[]
+    /** Absent from an older server. */
+    returns?: DbReturn[]
+    return_lines?: DbReturnLine[]
   }
   cursor: number
   has_more: boolean
@@ -68,6 +73,8 @@ export async function applyPage(page: PullPage): Promise<void> {
   await write(c.invoices, db.invoices as unknown as Table<DbInvoice, string>)
   await write(c.invoice_lines, db.invoice_lines as unknown as Table<DbInvoiceLine, string>)
   await write(c.payments, db.payments as unknown as Table<DbPayment, string>)
+  await write(c.returns, db.returns as unknown as Table<DbReturn, string>)
+  await write(c.return_lines, db.return_lines as unknown as Table<DbReturnLine, string>)
   if (page.settings) {
     const rows = Object.entries(page.settings).map(([key, value]) => ({ key, value }))
     await db.settings.bulkPut(rows)

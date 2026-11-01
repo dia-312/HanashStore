@@ -2,6 +2,7 @@ import { Suspense, lazy, useState } from 'react'
 import { Link, useParams } from 'react-router'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { InvoiceTags } from '../../components/InvoiceRow'
+import { Tag } from '../../components/Tag'
 import { ar, fill } from '../../i18n/ar'
 import { formatDateTime } from '../../lib/date'
 import { invoiceDocument } from '../../lib/documents'
@@ -179,6 +180,37 @@ export default function InvoiceView() {
         </div>
       )}
 
+      {invoice.returns.length > 0 && (
+        <div className="grid gap-2 rounded-2xl bg-white p-4">
+          <h3 className="text-lg font-bold">{ar.returns.list}</h3>
+          <ul className="grid gap-2">
+            {invoice.returns.map((r) => (
+              <li key={r.id} className="grid gap-1 border-t border-navy/10 pt-2 first:border-0">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold">
+                    <bdi>{r.number}</bdi> · <bdi>{formatMoney(r.total)}</bdi>
+                  </span>
+                  {r.sendState === 'pending' && <Tag kind="wait">{ar.returns.unsent}</Tag>}
+                </div>
+                <p className="text-sm opacity-70">
+                  <bdi>{formatDateTime(r.issued_at)}</bdi>
+                </p>
+                <ul className="text-sm">
+                  {r.lines.map((l, i) => (
+                    <li key={i}>
+                      {l.product_name}
+                      {l.variant_label && ` · ${l.variant_label}`} × <bdi>{l.qty}</bdi> ·{' '}
+                      {l.disposition === 'restock' ? ar.returns.stockedLabel : ar.returns.damaged}
+                    </li>
+                  ))}
+                </ul>
+                {r.reason && <p className="text-sm">{r.reason}</p>}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       {document && (
         <Suspense fallback={<p>{ar.common.loading}</p>}>
           <SharePanel
@@ -202,12 +234,23 @@ export default function InvoiceView() {
               {ar.invoices.markDelivered}
             </button>
           )}
+          {invoice.canReturn && (
+            <Link
+              to={`/invoices/${invoice.id}/return`}
+              className={`${button} inline-flex items-center`}
+            >
+              {ar.returns.open}
+            </Link>
+          )}
           {invoice.canCancel && (
             <button type="button" className={button} onClick={() => setCancelling(true)}>
               {ar.invoices.cancel}
             </button>
           )}
         </div>
+      )}
+      {invoice.status === 'confirmed' && invoice.returns.length > 0 && (
+        <p className="text-sm">{ar.returns.cannotCancel}</p>
       )}
 
       {cancelling && (

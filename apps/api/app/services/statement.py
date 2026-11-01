@@ -1,7 +1,7 @@
 """Customer statement (كشف حساب, SPEC section 7). Flagged for line-by-line review: money.
 
-Rows are the opening balance, invoices (debit) and payments (credit) in chronological order, with a
-running balance. Returns (credit) arrive with M7. A cancelled invoice and a voided payment are
+Rows are the opening balance, invoices (debit), returns (credit) and payments (credit) in
+chronological order, with a running balance. A cancelled invoice and a voided payment are
 shown only on request and never move the balance."""
 
 import uuid
@@ -13,7 +13,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.errors import ApiError
-from app.models import Customer, Invoice, Payment
+from app.models import Customer, Invoice, Payment, Return
 
 HEBRON = ZoneInfo("Asia/Hebron")
 DEFAULT_MONTHS = 3
@@ -21,7 +21,7 @@ DEFAULT_MONTHS = 3
 
 @dataclass
 class StatementRow:
-    kind: str  # opening | invoice | payment
+    kind: str  # opening | invoice | return | payment
     moment: datetime
     ref: str
     debit: int
@@ -89,7 +89,15 @@ def build(
         )
         or 0
     )
-    balance = int(customer.opening_balance + before_invoices - before_payments)
+    before_returns = (
+        db.scalar(
+            select(func.coalesce(func.sum(Return.total), 0)).where(
+                Return.customer_id == customer_id, Return.issued_at < start
+            )
+        )
+        or 0
+    )
+    balance = int(customer.opening_balance + before_invoices - before_returns - before_payments)
 
     rows = [StatementRow("opening", start, "", 0, 0, None, balance)]
     entries: list[StatementRow] = []
@@ -101,6 +109,13 @@ def build(
         off = None if inv.status == "confirmed" else "cancelled"
         if off is None or include_off:
             entries.append(StatementRow("invoice", inv.issued_at, inv.number, inv.total, 0, off))
+    # A return is never cancelled or voided, so it always counts.
+    for ret in db.scalars(
+        select(Return).where(
+            Return.customer_id == customer_id, Return.issued_at >= start, Return.issued_at < end
+        )
+    ):
+        entries.append(StatementRow("return", ret.issued_at, ret.number, 0, ret.total, None))
     for pay in db.scalars(
         select(Payment).where(
             Payment.customer_id == customer_id, Payment.paid_at >= start, Payment.paid_at < end
@@ -109,8 +124,9 @@ def build(
         off = None if pay.status == "active" else "voided"
         if off is None or include_off:
             entries.append(StatementRow("payment", pay.paid_at, pay.number, 0, pay.amount, off))
-    # An invoice comes before the payment taken with it (same moment).
-    entries.sort(key=lambda r: (r.moment, 0 if r.kind == "invoice" else 1, r.ref))
+    # At the same moment an invoice comes first, then a return, then a payment.
+    order = {"invoice": 0, "return": 1, "payment": 2}
+    entries.sort(key=lambda r: (r.moment, order[r.kind], r.ref))
 
     result = Statement()
     for row in entries:

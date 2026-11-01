@@ -73,7 +73,8 @@ def _clean_tables(_migrated_database: None) -> None:
     with get_engine().begin() as conn:
         conn.execute(
             text(
-                "TRUNCATE audit_log, processed_commands, payments, invoice_lines, invoices,"
+                "TRUNCATE audit_log, processed_commands, return_lines, returns, payments,"
+                " invoice_lines, invoices,"
                 " customers, stock_movements, product_images, product_variants, products,"
                 " categories, sessions, devices, users, settings"
             )

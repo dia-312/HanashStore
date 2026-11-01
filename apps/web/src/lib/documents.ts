@@ -5,6 +5,7 @@ import {
   effectiveBalances,
   paymentIsVoided,
   paymentWasRefused,
+  returnWasRefused,
   saleEffects,
   type SalesSnapshot,
 } from './localSales'
@@ -100,7 +101,7 @@ export function invoiceDocument(
 }
 
 export interface StatementEntry {
-  kind: 'opening' | 'invoice' | 'payment'
+  kind: 'opening' | 'invoice' | 'return' | 'payment'
   /** ISO timestamp; the opening row has none (it is dated by the period). */
   at: string
   ref: string
@@ -138,6 +139,9 @@ export function defaultPeriod(today: string): { from: string; to: string } {
  * invoice, so it counts backwards instead: the balance he has now, minus what happened since the
  * period began. Both give the same number wherever the device has the rows of the period.
  */
+// At the same moment an invoice comes first, then a return, then a payment (as on the server).
+const KIND_ORDER: Record<string, number> = { opening: -1, invoice: 0, return: 1, payment: 2 }
+
 export function buildStatement(
   s: SalesSnapshot,
   customerId: string,
@@ -165,6 +169,20 @@ export function buildStatement(
       off,
       balance: 0,
       day: hebronDay(inv.issued_at),
+    })
+  }
+  // A return is never cancelled or voided: it always counts, unless the server refused it.
+  for (const r of s.returns) {
+    if (r.customer_id !== customerId || returnWasRefused(e, r)) continue
+    entries.push({
+      kind: 'return',
+      at: r.issued_at,
+      ref: r.number,
+      debit: 0,
+      credit: r.total,
+      off: null,
+      balance: 0,
+      day: hebronDay(r.issued_at),
     })
   }
   for (const p of s.payments) {
@@ -196,7 +214,7 @@ export function buildStatement(
     .sort(
       (a, b) =>
         a.at.localeCompare(b.at) ||
-        (a.kind === b.kind ? 0 : a.kind === 'invoice' ? -1 : 1) ||
+        KIND_ORDER[a.kind]! - KIND_ORDER[b.kind]! ||
         a.ref.localeCompare(b.ref),
     )
   let totalDebit = 0
@@ -251,9 +269,11 @@ export function statementDocument(
           ? L.opening
           : r.kind === 'invoice'
             ? L.invoice + (r.off ? ` ${L.cancelled}` : '')
-            : r.off
-              ? L.voided
-              : L.payment,
+            : r.kind === 'return'
+              ? L.return
+              : r.off
+                ? L.voided
+                : L.payment,
       number: r.ref || null,
       debit: r.debit ? formatMoney(r.debit) : null,
       credit: r.credit ? formatMoney(r.credit) : null,
