@@ -68,4 +68,5 @@ M3 (Offline engine) built; tried on the real iPad by the user (fast catalog, off
 PR 3 merged. PR 4 (M3 gap fixes) is open.
 M4 (Customers, presentation mode, checkout, invoices) built; tried on the real iPad by the user (offline customer, presentation mode with pictures, partial payment, sync on reconnect; catalog opens in 42 ms, first sync 977 ms), WebKit journey with the SPEC section 13 flow. PR 5 is open. Details: `docs/M4-NOTES.md`.
 M5 (WhatsApp output) built; tried on the real iPad by the user (business details on the invoice, PDF online, PNG shared in 271 ms, new invoice offline offers only the picture with the reason, statement both ways), WebKit journey 16/16, CI green on PR 6. Details: `docs/M5-NOTES.md`.
-Next: merge PR 4, 5, 6 in order (PR 5 and 6 are stacked on the earlier branch), then M6 (not started).
+M6 (Payments and statement) built; tried on the real iPad by the user (offline payment shown at once and marked not sent, synced on reconnect, void with a reason, statement closing equals the balance), WebKit journey 17/17, CI green on PR 7. Details: `docs/M6-NOTES.md`.
+Next: merge PR 7, then M7 Returns (not started).

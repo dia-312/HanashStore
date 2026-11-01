@@ -1,6 +1,6 @@
 # M6 — Payments and statement: notes
 
-Branch `m6-payments` (from `main` after PRs 4, 5, 6 were merged). **Status: built and checked on the PC (tests, WebKit browser journey). Not pushed, not yet tried on the real iPad.**
+Branch `m6-payments` (from `main` after PRs 4, 5, 6 were merged). **Status: built, checked on the PC (tests, WebKit browser journey) and tried on the real iPad by the user: all checks passed.**
 Done when (SPEC section 15): statement totals equal the balance formula in tests. They do, on both sides (see below). The statement screen itself shipped in M5 because sharing needed it; M6 adds standalone payments and void.
 
 ## What exists
@@ -20,8 +20,10 @@ Done when (SPEC section 15): statement totals equal the balance formula in tests
 ## Also fixed on the way
 - **The first PDF after the API container starts could take over 30 s** (it timed out in the browser journey twice, on the first run of M5 and again here). The API now renders a tiny statement in a background thread at start-up (`pdf.warm_up`), and the journey's PDF step takes under 8 s. Initial JS 188.4 KB gzip.
 
+## Tried on the iPad (by the user, over the tunnel)
+Offline payment from the profile (shown at once, marked not sent, balance lowered), sync on reconnect with Arabic command names on the sync screen, void with a reason (balance back), statement closing equal to the balance with the voided row only under the toggle. All passed.
+
 ## Not verified
-- iPad: the payment screen by touch (date field, keypad), void, the profile list.
 - The payment date field uses the system date picker; on iOS it opens the wheel. A payment dated another day is stored at noon of that day.
 
 ## Decisions and deviations
