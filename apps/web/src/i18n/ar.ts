@@ -539,6 +539,7 @@ export const ar = {
     nothingPicked: 'اختر كمية لصنف واحد على الأقل.',
     failed: 'تعذّر حفظ المرتجع. حاول مرة أخرى.',
     badQty: 'الكمية أكبر من المتبقي لهذا الصنف.',
+    badQtyDetail: '(كتبت {typed}، المتبقي {left})',
     list: 'المرتجعات',
     none: 'لا توجد مرتجعات.',
     fromInvoiceNumber: 'من الفاتورة {number}',

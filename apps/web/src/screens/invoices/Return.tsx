@@ -169,7 +169,13 @@ export default function Return() {
                     {!valid && (
                       <p role="alert" className="text-sm font-bold text-red-700">
                         <span aria-hidden="true">⚠ </span>
-                        {ar.returns.badQty}
+                        {ar.returns.badQty}{' '}
+                        <bdi>
+                          {fill(ar.returns.badQtyDetail, {
+                            typed: pick.qty,
+                            left: entry.remaining,
+                          })}
+                        </bdi>
                       </p>
                     )}
                     <fieldset className="grid gap-1">

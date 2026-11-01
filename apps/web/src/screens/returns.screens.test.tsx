@@ -203,3 +203,24 @@ describe('Arabic digits from the iPad keyboard', () => {
     expect(screen.getByText(ar.returns.badQty)).toBeTruthy()
   })
 })
+
+describe('after confirming', () => {
+  it('never flashes the quantity warning while the return is being saved', async () => {
+    const { invoiceId } = await sell()
+    renderApp(`/invoices/${invoiceId}/return`)
+    fireEvent.change(await screen.findByLabelText(new RegExp(ar.returns.qty)), {
+      target: { value: '3' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: ar.returns.confirm }))
+    const sheet = await screen.findByRole('dialog')
+    let flashed = false
+    const watch = new MutationObserver(() => {
+      if (document.body.textContent?.includes(ar.returns.badQty)) flashed = true
+    })
+    watch.observe(document.body, { childList: true, subtree: true, characterData: true })
+    fireEvent.click(within(sheet).getByRole('button', { name: ar.returns.confirm }))
+    await waitFor(() => expect(where()).toBe(`/invoices/${invoiceId}`))
+    watch.disconnect()
+    expect(flashed).toBe(false)
+  })
+})
