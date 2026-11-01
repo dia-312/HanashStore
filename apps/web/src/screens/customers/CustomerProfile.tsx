@@ -102,6 +102,9 @@ export function CustomerProfile() {
           <Link to={`/customers/${customer.id}/payment`} className={action}>
             {ar.payment.open}
           </Link>
+          <Link to={`/customers/${customer.id}/return`} className={action}>
+            {ar.returns.open}
+          </Link>
           <Link to={`/customers/${customer.id}/statement`} className={action}>
             {ar.statement.open}
           </Link>
@@ -132,6 +135,31 @@ export function CustomerProfile() {
             {customer.invoices.map((invoice) => (
               <li key={invoice.id}>
                 <InvoiceRow invoice={invoice} showCustomer={false} />
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      <div>
+        <h3 className="mb-2 text-lg font-bold">{ar.returns.list}</h3>
+        {customer.returns.length === 0 ? (
+          <p className="opacity-70">{ar.returns.none}</p>
+        ) : (
+          <ul className="grid gap-2">
+            {customer.returns.map((r) => (
+              <li key={r.id} className="grid gap-1 rounded-xl bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-bold">
+                    <bdi>{r.number}</bdi> · <bdi>{formatMoney(r.total)}</bdi>
+                  </span>
+                  {r.sendState === 'pending' && <Tag kind="wait">{ar.returns.unsent}</Tag>}
+                </div>
+                <p className="text-sm opacity-80">
+                  <bdi>{formatDateTime(r.issued_at)}</bdi> ·{' '}
+                  {fill(ar.returns.fromInvoiceNumber, { number: r.invoice_number })}
+                </p>
+                {r.reason && <p className="text-sm">{r.reason}</p>}
               </li>
             ))}
           </ul>

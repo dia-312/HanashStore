@@ -54,7 +54,13 @@ export function History({ variant, onClose }: { variant: Variant; onClose: () =>
                           ? 'purchase'
                           : w.type === 'stock.damage'
                             ? 'damage'
-                            : 'adjustment'
+                            : w.type === 'return.create'
+                              ? 'return'
+                              : w.type === 'invoice.create'
+                                ? 'sale'
+                                : w.type === 'invoice.cancel'
+                                  ? 'sale_cancel'
+                                  : 'adjustment'
                       ]
                     }
                   </span>

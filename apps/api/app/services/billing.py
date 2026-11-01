@@ -49,3 +49,24 @@ def customer_balance(
 ) -> int:
     """Positive = the customer owes. Calculated by query, never stored."""
     return opening + invoices_total - returns_total - payments_total
+
+
+def return_line_amount(
+    line_total: int,
+    discount_share: int,
+    sold_qty: int,
+    already_qty: int,
+    already_amount: int,
+    qty: int,
+) -> int:
+    """What a customer is credited for taking `qty` of an invoice line back (SPEC section 7).
+
+    The line is worth `line_total - discount_share` after its share of the discount. A part is
+    worth that value times `qty / sold_qty`, rounded down. The return that takes the line's last
+    unit back gets what is left, so all the returns of one line add up to exactly its value."""
+    if sold_qty <= 0 or qty <= 0 or already_qty < 0 or already_qty + qty > sold_qty:
+        raise ValueError("quantity out of range")
+    net = line_total - discount_share
+    if already_qty + qty == sold_qty:
+        return net - already_amount
+    return net * qty // sold_qty

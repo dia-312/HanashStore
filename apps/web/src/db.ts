@@ -112,6 +112,27 @@ export interface DbPayment {
   change_seq: number
 }
 
+export interface DbReturn {
+  id: string
+  number: string
+  customer_id: string
+  invoice_id: string
+  reason: string | null
+  total: number
+  issued_at: string
+  change_seq: number
+}
+
+export interface DbReturnLine {
+  id: string
+  return_id: string
+  invoice_line_id: string
+  qty: number
+  disposition: 'restock' | 'damaged'
+  amount: number
+  change_seq: number
+}
+
 /** A draft sale: one open cart per customer, and one for a sale with no customer yet (`id` is
  * the customer id, or `none`). Lives only on this device. */
 export interface DbCart {
@@ -157,6 +178,8 @@ export type SalesDb = Dexie & {
   invoices: EntityTable<DbInvoice, 'id'>
   invoice_lines: EntityTable<DbInvoiceLine, 'id'>
   payments: EntityTable<DbPayment, 'id'>
+  returns: EntityTable<DbReturn, 'id'>
+  return_lines: EntityTable<DbReturnLine, 'id'>
   carts: EntityTable<DbCart, 'id'>
   settings: EntityTable<DbSetting, 'key'>
 }
@@ -201,6 +224,24 @@ db.version(4).stores({
   invoices: 'id, customer_id, status, issued_at',
   invoice_lines: 'id, invoice_id',
   payments: 'id, customer_id, invoice_id',
+  carts: 'id',
+  settings: 'key',
+})
+
+// Version 5 (M7): returns and their lines. Nothing already stored is touched.
+db.version(5).stores({
+  meta: 'key',
+  categories: 'id',
+  products: 'id, category_id',
+  variants: 'id, product_id',
+  images: 'id, product_id',
+  outbox: '++seq, &id, status',
+  customers: 'id',
+  invoices: 'id, customer_id, status, issued_at',
+  invoice_lines: 'id, invoice_id',
+  payments: 'id, customer_id, invoice_id',
+  returns: 'id, customer_id, invoice_id',
+  return_lines: 'id, return_id, invoice_line_id',
   carts: 'id',
   settings: 'key',
 })

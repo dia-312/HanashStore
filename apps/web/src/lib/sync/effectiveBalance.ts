@@ -5,6 +5,7 @@ import type {
   InvoiceCreatePayload,
   PaymentCreatePayload,
   PaymentVoidPayload,
+  ReturnCreatePayload,
 } from './commands'
 
 type PendingCommand = Pick<OutboxRow, 'type' | 'payload' | 'status'>
@@ -47,6 +48,9 @@ export function pendingBalances(
     } else if (command.type === 'payment.create') {
       const p = command.payload as PaymentCreatePayload
       add(p.customer_id, -p.amount)
+    } else if (command.type === 'return.create') {
+      const p = command.payload as ReturnCreatePayload
+      add(p.customer_id, -p.total) // credited to him
     } else if (command.type === 'payment.void') {
       const p = command.payload as PaymentVoidPayload
       add(p.customer_id, p.amount) // the money goes back onto what he owes

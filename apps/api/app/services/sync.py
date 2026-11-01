@@ -34,6 +34,8 @@ from app.models import (
     Product,
     ProductImage,
     ProductVariant,
+    Return,
+    ReturnLine,
 )
 from app.schemas import (
     AdjustPayload,
@@ -48,6 +50,7 @@ from app.schemas import (
     PullChanges,
     PullPage,
     PurchasePayload,
+    ReturnCreatePayload,
     SyncCategory,
     SyncCustomer,
     SyncImage,
@@ -55,9 +58,12 @@ from app.schemas import (
     SyncInvoiceLine,
     SyncPayment,
     SyncProduct,
+    SyncReturn,
+    SyncReturnLine,
     SyncVariant,
 )
 from app.services import catalog, customers, invoices, payments, stock
+from app.services import returns as returns_service
 from app.services import settings as settings_service
 
 PULL_LIMIT = 1000
@@ -74,10 +80,12 @@ _TABLES = (
     Invoice,
     InvoiceLine,
     Payment,
+    Return,
+    ReturnLine,
 )
 
 # Invoices, their lines and their payments are kept on the device for the last 12 months only
-# (SPEC section 8); older ones are fetched when needed (returns, M7).
+# (SPEC section 8); older ones are fetched when needed (returns).
 HISTORY = timedelta(days=366)
 
 
@@ -88,6 +96,10 @@ def _in_window(model: Any, cutoff: Any) -> list[Any]:
         return [Payment.paid_at >= cutoff]
     if model is InvoiceLine:
         return [InvoiceLine.invoice_id.in_(select(Invoice.id).where(Invoice.issued_at >= cutoff))]
+    if model is Return:
+        return [Return.issued_at >= cutoff]
+    if model is ReturnLine:
+        return [ReturnLine.return_id.in_(select(Return.id).where(Return.issued_at >= cutoff))]
     return []
 
 
@@ -110,7 +122,18 @@ def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
         return list(db.scalars(query.order_by(model.change_seq, model.id)))
 
     groups = [rows(t) for t in _TABLES]
-    categories, products, variants, images, customer_rows, inv, lines, payments = groups
+    (
+        categories,
+        products,
+        variants,
+        images,
+        customer_rows,
+        inv,
+        lines,
+        payments,
+        return_rows,
+        return_line_rows,
+    ) = groups
     has_more = boundary is not None and any(
         db.scalar(select(t.id).where(t.change_seq > boundary, *_in_window(t, cutoff)).limit(1))
         is not None
@@ -131,6 +154,8 @@ def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
             invoices=[SyncInvoice.model_validate(r) for r in inv],
             invoice_lines=[SyncInvoiceLine.model_validate(r) for r in lines],
             payments=[SyncPayment.model_validate(r) for r in payments],
+            returns=[SyncReturn.model_validate(r) for r in return_rows],
+            return_lines=[SyncReturnLine.model_validate(r) for r in return_line_rows],
         ),
         cursor=max(seen, default=cursor),
         has_more=has_more,
@@ -139,14 +164,14 @@ def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
 
 
 def highest_numbers(db: Session) -> dict[str, int]:
-    """The highest INV and REC numbers the server has, so a new or replacement device can start
+    """The highest INV, REC and RET numbers the server has, so a new or replacement device can start
     its own counters above them (SPEC section 7)."""
 
     def top(table: str) -> int:
         query = f"SELECT COALESCE(MAX(substring(number FROM '[0-9]+$')::bigint), 0) FROM {table}"
         return int(db.scalar(text(query)) or 0)
 
-    return {"INV": top("invoices"), "REC": top("payments")}
+    return {"INV": top("invoices"), "REC": top("payments"), "RET": top("returns")}
 
 
 @dataclass
@@ -283,6 +308,11 @@ def _payment_void(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
     return Applied(data, warnings)
 
 
+def _return_create(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
+    body = ReturnCreatePayload.model_validate(raw)
+    return Applied(returns_service.create_return(db, device, body, take_seq(db)))
+
+
 HANDLERS: dict[str, Handler] = {
     "stock.purchase": _purchase,
     "stock.damage": _damage,
@@ -293,6 +323,7 @@ HANDLERS: dict[str, Handler] = {
     "invoice.cancel": _invoice_cancel,
     "payment.create": _payment_create,
     "payment.void": _payment_void,
+    "return.create": _return_create,
 }
 
 

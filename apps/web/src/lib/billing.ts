@@ -44,7 +44,29 @@ export function allocateDiscount(lineTotals: readonly number[], discount: number
 /** What is still owed on one invoice: never negative (an overpayment is credit elsewhere). */
 export const remainingOnInvoice = (total: number, paid: number) => Math.max(total - paid, 0)
 
-/** Positive = the customer owes. Returns arrive with M7. */
+/**
+ * What a customer is credited for taking `qty` units of an invoice line back. The line is worth
+ * `lineTotal - discountShare`; a part is worth that times `qty / soldQty`, rounded down, and the
+ * return that takes the last unit gets what is left, so a line's returns add up to exactly its
+ * value. Same rule as apps/api/app/services/billing.py (shared/billing_cases.json).
+ */
+export function returnLineAmount(
+  lineTotal: number,
+  discountShare: number,
+  soldQty: number,
+  alreadyQty: number,
+  alreadyAmount: number,
+  qty: number,
+): number {
+  if (soldQty <= 0 || qty <= 0 || alreadyQty < 0 || alreadyQty + qty > soldQty) {
+    throw new RangeError('quantity out of range')
+  }
+  const net = lineTotal - discountShare
+  if (alreadyQty + qty === soldQty) return net - alreadyAmount
+  return Number((BigInt(net) * BigInt(qty)) / BigInt(soldQty))
+}
+
+/** Positive = the customer owes. */
 export const customerBalance = (
   opening: number,
   invoicesTotal: number,

@@ -23,6 +23,7 @@ from app.models import (
     Payment,
     Product,
     ProductVariant,
+    Return,
 )
 from app.schemas import CancelPayload, InvoiceCreatePayload, MarkDeliveredPayload
 from app.services import billing, customers, stock
@@ -238,8 +239,7 @@ def mark_delivered(
 
 
 def has_returns(db: Session, invoice_id: uuid.UUID) -> bool:
-    """Returns arrive with M7; until then no invoice has any."""
-    return False
+    return db.scalar(select(Return.id).where(Return.invoice_id == invoice_id).limit(1)) is not None
 
 
 def cancel_invoice(

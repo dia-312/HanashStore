@@ -120,6 +120,8 @@ def statement_document(
             label = labels["opening"]
         elif row.kind == "invoice":
             label = labels["invoice"] + (" " + labels["cancelled"] if row.off else "")
+        elif row.kind == "return":
+            label = labels["return"]
         else:
             label = labels["voided"] if row.off else labels["payment"]
         when = date_from if row.kind == "opening" else row.moment.astimezone(HEBRON).date()

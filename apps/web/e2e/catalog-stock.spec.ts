@@ -441,6 +441,8 @@ interface Pulled {
       delivered_at: string | null
     }[]
     payments: { invoice_id: string | null; amount: number; method: string; status: string }[]
+    returns: { id: string; total: number }[]
+    return_lines: { qty: number; disposition: string; amount: number }[]
   }
 }
 const pulled = () => json<Pulled>('/api/v1/sync/pull?cursor=0')
@@ -692,4 +694,77 @@ test('mark the invoice delivered, then cancel it giving the payment back', async
   expect(server.changes.payments[0]?.status).toBe('voided')
   expect(server.changes.customers.find((c) => c.name === 'محل الاختبار')?.balance).toBe(10000) // back to the opening balance
   expect(await coalStock(2400)).toBe(coal40Before + 3)
+})
+
+test('M7: a part of a discounted invoice returned offline, the rest after reconnecting', async () => {
+  // A sale made elsewhere (so this test has an invoice nobody has cancelled): 3 x 24.00 less a
+  // 1.00 discount, so every unit is worth 23.66 and the last return takes what is left.
+  const coal = (await findProduct(COAL)).variants.find((v) => v.price === 2400)!
+  const customerId = (await pulled()).changes.customers.find((c) => c.name === 'محل الاختبار')!.id
+  const balanceBefore = (await pulled()).changes.customers.find((c) => c.id === customerId)!.balance
+  const stockBefore = await coalStock(2400)
+  const invoiceId = crypto.randomUUID()
+  await page.context().setOffline(true)
+  const sale = await pushToServer([
+    command('invoice.create', {
+      invoice_id: invoiceId,
+      number: 'INV-000900',
+      customer_id: customerId,
+      issued_at: new Date().toISOString(),
+      discount: 100,
+      note: null,
+      lines: [{ line_id: crypto.randomUUID(), variant_id: coal.id, qty: 3, unit_price: 2400 }],
+    }),
+  ])
+  expect(sale.results[0]?.status).toBe('applied')
+  await page.context().setOffline(false)
+  await expect
+    .poll(async () => (await pulled()).changes.invoices.length, { timeout: 60_000 })
+    .toBeGreaterThan(1)
+  await expect(chip(/تمت المزامنة/)).toBeVisible({ timeout: 60_000 })
+
+  // offline: take one unit back to the shelf
+  await page.context().setOffline(true)
+  await goTo(ar.nav.invoices)
+  await page.getByRole('link', { name: /INV-000900/ }).click()
+  await page.getByRole('link', { name: ar.returns.open }).click()
+  await page.getByLabel(new RegExp(ar.returns.qty)).fill('1')
+  await expect(page.getByText(/23\.66/).first()).toBeVisible()
+  await page.getByRole('button', { name: ar.returns.confirm }).click()
+  await page.getByRole('dialog').getByRole('button', { name: ar.returns.confirm }).click()
+  await expect(page.getByText(ar.returns.list)).toBeVisible()
+  await expect(page.getByText(ar.returns.unsent)).toBeVisible()
+  // an invoice with a return can't be cancelled
+  await expect(page.getByRole('button', { name: ar.invoices.cancel })).toHaveCount(0)
+  expect((await pulled()).changes.returns).toHaveLength(0) // the server has heard nothing
+
+  await page.context().setOffline(false)
+  await expect
+    .poll(async () => (await pulled()).changes.returns.length, { timeout: 60_000 })
+    .toBe(1)
+  const first = await pulled()
+  expect(first.changes.returns[0]?.total).toBe(2366)
+  expect(first.changes.return_lines).toMatchObject([
+    { qty: 1, disposition: 'restock', amount: 2366 },
+  ])
+  expect(await coalStock(2400)).toBe(stockBefore - 3 + 1)
+  await expect(page.getByText(ar.returns.unsent)).toHaveCount(0, { timeout: 60_000 })
+
+  // online: the other two, written off. The last return gets the exact remainder (47.34, not 47.32)
+  await page.getByRole('link', { name: ar.returns.open }).click()
+  await page.getByLabel(new RegExp(ar.returns.qty)).fill('2')
+  await page.getByRole('button', { name: new RegExp(ar.returns.damaged) }).click()
+  await expect(page.getByText(/47\.34/).first()).toBeVisible()
+  await page.getByRole('button', { name: ar.returns.confirm }).click()
+  await page.getByRole('dialog').getByRole('button', { name: ar.returns.confirm }).click()
+  await expect
+    .poll(async () => (await pulled()).changes.returns.length, { timeout: 60_000 })
+    .toBe(2)
+  const done = await pulled()
+  const credited = done.changes.returns.reduce((sum, r) => sum + r.total, 0)
+  expect(credited).toBe(7100) // 3 x 24.00 - 1.00: exactly what the invoice came to
+  expect(done.changes.customers.find((c) => c.id === customerId)?.balance).toBe(balanceBefore)
+  expect(await coalStock(2400)).toBe(stockBefore - 3 + 1) // the damaged two did not go back
+  // nothing left to return, so the button is gone
+  await expect(page.getByRole('link', { name: ar.returns.open })).toHaveCount(0)
 })

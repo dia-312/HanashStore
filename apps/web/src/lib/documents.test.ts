@@ -96,7 +96,15 @@ const fixtureSnapshot = (): SalesSnapshot => {
     balance: 10000,
     change_seq: 5,
   }
-  return { customers: [customer], invoices, lines, payments, outbox: [] }
+  return {
+    customers: [customer],
+    invoices,
+    lines,
+    payments,
+    returns: [],
+    returnLines: [],
+    outbox: [],
+  }
 }
 
 describe('invoice document (same model as the server)', () => {

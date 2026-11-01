@@ -28,6 +28,8 @@ const ImportProducts = lazy(() => import('./screens/settings/ImportProducts'))
 const SyncScreen = lazy(() => import('./screens/Sync'))
 const Statement = lazy(() => import('./screens/customers/Statement'))
 const Payment = lazy(() => import('./screens/customers/Payment'))
+const ReturnPick = lazy(() => import('./screens/customers/ReturnPick'))
+const Return = lazy(() => import('./screens/invoices/Return'))
 const BusinessSettings = lazy(() => import('./screens/settings/Business'))
 const Invoices = lazy(() => import('./screens/invoices/Invoices'))
 
@@ -83,10 +85,12 @@ export function App() {
               <Route path="customers/:customerId" element={<CustomerProfile />} />
               <Route path="customers/:customerId/statement" element={lazyPage(<Statement />)} />
               <Route path="customers/:customerId/payment" element={lazyPage(<Payment />)} />
+              <Route path="customers/:customerId/return" element={lazyPage(<ReturnPick />)} />
               <Route path="customers/:customerId/edit" element={<EditCustomer />} />
               <Route path="checkout/:customerId?" element={<Checkout />} />
               <Route path="invoices" element={lazyPage(<Invoices />)} />
               <Route path="invoices/:invoiceId" element={<InvoiceView />} />
+              <Route path="invoices/:invoiceId/return" element={lazyPage(<Return />)} />
               <Route path="catalog/:productId" element={lazyPage(<ProductPage />)} />
               <Route path="stock" element={lazyPage(<Stock />)} />
               <Route path="sync" element={lazyPage(<SyncScreen />)} />
