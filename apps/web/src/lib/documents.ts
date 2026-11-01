@@ -101,7 +101,7 @@ export function invoiceDocument(
 }
 
 export interface StatementEntry {
-  kind: 'opening' | 'invoice' | 'return' | 'payment'
+  kind: 'opening' | 'invoice' | 'return' | 'payment' | 'refund'
   /** ISO timestamp; the opening row has none (it is dated by the period). */
   at: string
   ref: string
@@ -140,7 +140,13 @@ export function defaultPeriod(today: string): { from: string; to: string } {
  * period began. Both give the same number wherever the device has the rows of the period.
  */
 // At the same moment an invoice comes first, then a return, then a payment (as on the server).
-const KIND_ORDER: Record<string, number> = { opening: -1, invoice: 0, return: 1, payment: 2 }
+const KIND_ORDER: Record<string, number> = {
+  opening: -1,
+  invoice: 0,
+  return: 1,
+  payment: 2,
+  refund: 3,
+}
 
 export function buildStatement(
   s: SalesSnapshot,
@@ -189,12 +195,13 @@ export function buildStatement(
     if (p.customer_id !== customerId) continue
     if (paymentWasRefused(e, p)) continue
     const off = paymentIsVoided(e, p) ? 'voided' : null
+    const refund = p.kind === 'refund' // money going back out: a debit
     entries.push({
-      kind: 'payment',
+      kind: refund ? 'refund' : 'payment',
       at: p.paid_at,
       ref: p.number,
-      debit: 0,
-      credit: p.amount,
+      debit: refund ? p.amount : 0,
+      credit: refund ? 0 : p.amount,
       off,
       balance: 0,
       day: hebronDay(p.paid_at),
@@ -271,9 +278,13 @@ export function statementDocument(
             ? L.invoice + (r.off ? ` ${L.cancelled}` : '')
             : r.kind === 'return'
               ? L.return
-              : r.off
-                ? L.voided
-                : L.payment,
+              : r.kind === 'refund'
+                ? r.off
+                  ? L.refundVoided
+                  : L.refund
+                : r.off
+                  ? L.voided
+                  : L.payment,
       number: r.ref || null,
       debit: r.debit ? formatMoney(r.debit) : null,
       credit: r.credit ? formatMoney(r.credit) : null,

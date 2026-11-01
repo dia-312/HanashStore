@@ -14,7 +14,7 @@ from app import clock
 from app.audit import audit
 from app.errors import ApiError
 from app.models import Customer, Device, Payment
-from app.schemas import PaymentCreatePayload, PaymentVoidPayload
+from app.schemas import PaymentCreatePayload, PaymentVoidPayload, RefundCreatePayload
 from app.services import customers
 
 
@@ -69,6 +69,56 @@ def create_payment(
     db.flush()
     return {
         "payment_id": str(body.payment_id),
+        "number": body.number,
+        "customer_id": str(customer.id),
+        "customer_balance": customers.balance_of(db, customer.id),
+    }
+
+
+def create_refund(
+    db: Session, device: Device, body: RefundCreatePayload, seq: int
+) -> dict[str, Any]:
+    """Money given back to a customer. It raises what he owes (or lowers the credit he has) and is
+    voided like a payment if it was recorded by mistake. It is not tied to an invoice."""
+    customer = _customer(db, body.customer_id)
+    if (
+        db.get(Payment, body.refund_id) is not None
+        or db.scalar(select(Payment.id).where(Payment.number == body.number)) is not None
+    ):
+        raise ApiError(
+            409, "DUPLICATE_NUMBER", "Refund number already used", {"number": body.number}
+        )
+    now = clock.utcnow()
+    db.add(
+        Payment(
+            id=body.refund_id,
+            number=body.number,
+            kind="refund",
+            customer_id=customer.id,
+            invoice_id=None,
+            method=body.method,
+            amount=body.amount,
+            paid_at=body.refunded_at,
+            note=body.note or None,
+            status="active",
+            device_id=device.id,
+            created_at=now,
+            updated_at=now,
+            change_seq=seq,
+        )
+    )
+    customers.touch(customer, seq)
+    audit(
+        db,
+        "payment",
+        body.refund_id,
+        "refund",
+        after={"number": body.number, "amount": body.amount, "method": body.method},
+        device_id=device.id,
+    )
+    db.flush()
+    return {
+        "payment_id": str(body.refund_id),
         "number": body.number,
         "customer_id": str(customer.id),
         "customer_balance": customers.balance_of(db, customer.id),

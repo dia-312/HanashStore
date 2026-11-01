@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app.errors import ApiError
@@ -21,7 +21,7 @@ DEFAULT_MONTHS = 3
 
 @dataclass
 class StatementRow:
-    kind: str  # opening | invoice | return | payment
+    kind: str  # opening | invoice | return | payment | refund
     moment: datetime
     ref: str
     debit: int
@@ -81,7 +81,14 @@ def build(
     )
     before_payments = (
         db.scalar(
-            select(func.coalesce(func.sum(Payment.amount), 0)).where(
+            select(
+                func.coalesce(
+                    func.sum(
+                        case((Payment.kind == "refund", -Payment.amount), else_=Payment.amount)
+                    ),
+                    0,
+                )
+            ).where(
                 Payment.customer_id == customer_id,
                 Payment.status == "active",
                 Payment.paid_at < start,
@@ -123,9 +130,12 @@ def build(
     ):
         off = None if pay.status == "active" else "voided"
         if off is None or include_off:
-            entries.append(StatementRow("payment", pay.paid_at, pay.number, 0, pay.amount, off))
+            if pay.kind == "refund":  # money going back out: a debit
+                entries.append(StatementRow("refund", pay.paid_at, pay.number, pay.amount, 0, off))
+            else:
+                entries.append(StatementRow("payment", pay.paid_at, pay.number, 0, pay.amount, off))
     # At the same moment an invoice comes first, then a return, then a payment.
-    order = {"invoice": 0, "return": 1, "payment": 2}
+    order = {"invoice": 0, "return": 1, "payment": 2, "refund": 3}
     entries.sort(key=lambda r: (r.moment, order[r.kind], r.ref))
 
     result = Statement()

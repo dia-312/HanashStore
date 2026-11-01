@@ -84,13 +84,26 @@ export interface PaymentCreatePayload {
   note: string | null
 }
 
-/** The server ignores `customer_id` and `amount`: they let this device show the new balance at once. */
+/** Money handed back to a customer (a return he had already paid for). */
+export interface RefundCreatePayload {
+  refund_id: string
+  number: string
+  customer_id: string
+  refunded_at: string
+  amount: number
+  method: PaymentMethod
+  note: string | null
+}
+
+/** The server ignores `customer_id`, `amount` and `kind`: they let this device show the new
+ * balance at once (voiding a payment raises what he owes, voiding a refund lowers it). */
 export interface PaymentVoidPayload {
   payment_id: string
   voided_at: string
   reason: string
   customer_id: string
   amount: number
+  kind?: 'payment' | 'refund'
 }
 
 export type Disposition = 'restock' | 'damaged'
@@ -125,6 +138,7 @@ export type CommandType =
   | 'invoice.cancel'
   | 'payment.create'
   | 'payment.void'
+  | 'refund.create'
   | 'return.create'
 
 export interface CommandResult {

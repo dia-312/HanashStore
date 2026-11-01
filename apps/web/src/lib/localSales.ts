@@ -16,6 +16,7 @@ import type {
   MarkDeliveredPayload,
   PaymentCreatePayload,
   PaymentVoidPayload,
+  RefundCreatePayload,
   ReturnCreatePayload,
 } from './sync/commands'
 import { pendingBalances } from './sync/effectiveBalance'
@@ -171,6 +172,8 @@ export function saleEffects(s: SalesSnapshot): Effects {
       out.returnCreation.set((c.payload as ReturnCreatePayload).return_id, state)
     } else if (c.type === 'payment.create') {
       out.paymentCreation.set((c.payload as PaymentCreatePayload).payment_id, state)
+    } else if (c.type === 'refund.create') {
+      out.paymentCreation.set((c.payload as RefundCreatePayload).refund_id, state)
     } else if (c.status === 'pending' && c.type === 'payment.void') {
       const p = c.payload as PaymentVoidPayload
       out.voided.set(p.payment_id, p.reason)
@@ -418,6 +421,8 @@ export interface CustomerProfile extends CustomerItem {
 export interface PaymentItem {
   id: string
   number: string
+  /** Money received, or money handed back to the customer. */
+  kind: 'payment' | 'refund'
   amount: number
   method: DbPayment['method']
   paid_at: string
@@ -447,6 +452,7 @@ export function buildPaymentList(s: SalesSnapshot, customerId: string): PaymentI
     items.push({
       id: p.id,
       number: p.number,
+      kind: p.kind ?? 'payment',
       amount: p.amount,
       method: p.method,
       paid_at: p.paid_at,

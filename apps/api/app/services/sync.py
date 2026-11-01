@@ -50,6 +50,7 @@ from app.schemas import (
     PullChanges,
     PullPage,
     PurchasePayload,
+    RefundCreatePayload,
     ReturnCreatePayload,
     SyncCategory,
     SyncCustomer,
@@ -164,14 +165,22 @@ def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
 
 
 def highest_numbers(db: Session) -> dict[str, int]:
-    """The highest INV, REC and RET numbers the server has, so a new or replacement device can start
-    its own counters above them (SPEC section 7)."""
+    """The highest INV, REC, RET and REF numbers the server has, so a new or replacement device
+    can start its own counters above them (SPEC section 7)."""
 
-    def top(table: str) -> int:
-        query = f"SELECT COALESCE(MAX(substring(number FROM '[0-9]+$')::bigint), 0) FROM {table}"
-        return int(db.scalar(text(query)) or 0)
+    def top(table: str, prefix: str) -> int:
+        query = (
+            f"SELECT COALESCE(MAX(substring(number FROM '[0-9]+$')::bigint), 0) FROM {table}"
+            " WHERE number LIKE :like"
+        )
+        return int(db.scalar(text(query), {"like": f"{prefix}-%"}) or 0)
 
-    return {"INV": top("invoices"), "REC": top("payments"), "RET": top("returns")}
+    return {
+        "INV": top("invoices", "INV"),
+        "REC": top("payments", "REC"),
+        "RET": top("returns", "RET"),
+        "REF": top("payments", "REF"),
+    }
 
 
 @dataclass
@@ -313,6 +322,11 @@ def _return_create(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
     return Applied(returns_service.create_return(db, device, body, take_seq(db)))
 
 
+def _refund_create(db: Session, device: Device, raw: dict[str, Any]) -> Applied:
+    body = RefundCreatePayload.model_validate(raw)
+    return Applied(payments.create_refund(db, device, body, take_seq(db)))
+
+
 HANDLERS: dict[str, Handler] = {
     "stock.purchase": _purchase,
     "stock.damage": _damage,
@@ -324,6 +338,7 @@ HANDLERS: dict[str, Handler] = {
     "payment.create": _payment_create,
     "payment.void": _payment_void,
     "return.create": _return_create,
+    "refund.create": _refund_create,
 }
 
 

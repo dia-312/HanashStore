@@ -423,7 +423,7 @@ def test_stock_cache_still_equals_the_sum_of_movements_after_sales_and_cancels(
 
 
 def test_highest_numbers_let_a_new_device_continue_the_sequence(api: TestClient) -> None:
-    assert api.get(V1 + "/sync/numbers").json() == {"INV": 0, "REC": 0, "RET": 0}
+    assert api.get(V1 + "/sync/numbers").json() == {"INV": 0, "REC": 0, "RET": 0, "REF": 0}
     v, cid = _variant(api, 1000, 10), helpers.customer(api)
     first = helpers.invoice_cmd(cid, [(v, 1, 1000)], number="INV-000042", paid=100)
     first["payload"]["payment"]["number"] = "REC-000004"
@@ -431,7 +431,7 @@ def test_highest_numbers_let_a_new_device_continue_the_sequence(api: TestClient)
     second["payload"]["payment"]["number"] = "REC-000010"
     helpers.push_one(api, first)
     helpers.push_one(api, second)
-    assert api.get(V1 + "/sync/numbers").json() == {"INV": 43, "REC": 10, "RET": 0}
+    assert api.get(V1 + "/sync/numbers").json() == {"INV": 43, "REC": 10, "RET": 0, "REF": 0}
 
 
 def test_every_command_leaves_audit_rows(api: TestClient, db: Session) -> None:
