@@ -5,6 +5,7 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { ar, fill } from '../../i18n/ar'
 import type { VariantListItem } from '../../lib/catalogApi'
 import { describeError } from '../../lib/errors'
+import { parseCount } from '../../lib/money'
 import { queueCount, queueDamage, type LocalStockResult } from '../../lib/sync/stockCommands'
 import { uuid7 } from '../../lib/uuid7'
 import { Result } from './StockIn'
@@ -13,8 +14,10 @@ import { VariantPicker, variantLabel } from './VariantPicker'
 const input = 'min-h-12 w-full rounded-xl border-2 border-navy/30 bg-white px-3'
 const MAX_QTY = 100_000
 
-const whole = (text: string): number | null =>
-  /^\d{1,6}$/.test(text) && Number(text) <= MAX_QTY ? Number(text) : null
+const whole = (text: string): number | null => {
+  const n = parseCount(text)
+  return n !== null && n <= MAX_QTY ? n : null
+}
 
 /** The difference a count will record, shown before anything is saved. */
 export function countDifference(current: number, counted: number): number {

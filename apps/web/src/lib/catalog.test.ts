@@ -3,7 +3,7 @@ import cases from '../../../../shared/normalize_cases.json'
 import { ApiError } from './api'
 import { formatDateTime } from './date'
 import { describeError } from './errors'
-import { agorotToInput, parseMoney } from './money'
+import { agorotToInput, parseCount, parseMoney } from './money'
 import { normalizeArabic } from './normalize'
 import { countDifference } from '../screens/stock/StockSingle'
 import { issueText } from '../screens/settings/ImportProducts'
@@ -102,5 +102,20 @@ describe('import issue text', () => {
     expect(issueText({ row: 2, field: 'x', code: 'UNKNOWN_CODE', detail: null })).toBe(
       'UNKNOWN_CODE',
     )
+  })
+})
+
+describe('parseCount', () => {
+  it.each([
+    ['3', 3],
+    ['٣', 3],
+    ['۱۲', 12],
+    [' 7 ', 7],
+    ['', null],
+    ['1.5', null],
+    ['-2', null],
+    ['abc', null],
+  ])('%s', (text, expected) => {
+    expect(parseCount(text)).toBe(expected)
   })
 })

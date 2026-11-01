@@ -6,7 +6,7 @@ import { StatusBadge } from '../../components/StatusBadge'
 import { ar } from '../../i18n/ar'
 import { catalogApi, type Variant } from '../../lib/catalogApi'
 import { describeError } from '../../lib/errors'
-import { agorotToInput, parseMoney } from '../../lib/money'
+import { agorotToInput, parseCount, parseMoney } from '../../lib/money'
 import { History } from './History'
 
 const input = 'min-h-12 w-full rounded-xl border-2 border-navy/30 bg-white px-3'
@@ -42,7 +42,10 @@ function VariantCard({
   const [confirming, setConfirming] = useState(false)
 
   const parsedPrice = parseMoney(priceText)
-  const parsedMin = /^\d{1,6}$/.test(minText) ? Number(minText) : null
+  const parsedMin = (() => {
+    const n = parseCount(minText)
+    return n !== null && n <= 100_000 ? n : null
+  })()
   const dirty = priceText !== agorotToInput(variant.price) || minText !== String(variant.min_stock)
   const valid = parsedPrice !== null && parsedMin !== null
 

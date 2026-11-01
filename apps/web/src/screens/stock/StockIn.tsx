@@ -4,6 +4,7 @@ import { ErrorNotice } from '../../components/Notices'
 import { ar, fill } from '../../i18n/ar'
 import type { VariantListItem } from '../../lib/catalogApi'
 import { describeError } from '../../lib/errors'
+import { parseCount } from '../../lib/money'
 import { queuePurchase, type LocalStockResult } from '../../lib/sync/stockCommands'
 import { uuid7 } from '../../lib/uuid7'
 import { VariantPicker, variantLabel } from './VariantPicker'
@@ -15,8 +16,10 @@ interface Line {
 }
 
 const MAX_QTY = 100_000
-const parseQty = (text: string) =>
-  /^\d{1,6}$/.test(text) && Number(text) >= 1 && Number(text) <= MAX_QTY ? Number(text) : null
+const parseQty = (text: string) => {
+  const n = parseCount(text)
+  return n !== null && n >= 1 && n <= MAX_QTY ? n : null
+}
 
 export function Result({ result, onAgain }: { result: LocalStockResult; onAgain: () => void }) {
   return (

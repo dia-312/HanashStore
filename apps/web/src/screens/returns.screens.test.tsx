@@ -187,3 +187,19 @@ describe('customer profile and the invoice picker', () => {
     expect(screen.getByText(/عليه.*60\.00/)).toBeTruthy()
   })
 })
+
+describe('Arabic digits from the iPad keyboard', () => {
+  it('a quantity typed as ٢ is read as 2', async () => {
+    const { invoiceId } = await sell()
+    renderApp(`/invoices/${invoiceId}/return`)
+    const qty = await screen.findByLabelText(new RegExp(ar.returns.qty))
+    fireEvent.change(qty, { target: { value: '٢' } })
+    expect(screen.queryByText(ar.returns.badQty)).toBeNull()
+    expect(screen.getAllByText(/80\.00/, { selector: 'bdi' }).length).toBeGreaterThan(0)
+    expect(
+      (screen.getByRole('button', { name: ar.returns.confirm }) as HTMLButtonElement).disabled,
+    ).toBe(false)
+    fireEvent.change(qty, { target: { value: '٤' } })
+    expect(screen.getByText(ar.returns.badQty)).toBeTruthy()
+  })
+})

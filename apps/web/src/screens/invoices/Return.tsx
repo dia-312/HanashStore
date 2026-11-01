@@ -10,7 +10,7 @@ import {
   loadSalesSnapshot,
   returnableLines,
 } from '../../lib/localSales'
-import { formatMoney } from '../../lib/money'
+import { formatMoney, parseCount } from '../../lib/money'
 import { createReturn, SaleError } from '../../lib/sales'
 import type { Disposition } from '../../lib/sync/commands'
 import { useLive } from '../../lib/useLive'
@@ -54,9 +54,9 @@ export default function Return() {
 
   const rows = lines.map((entry) => {
     const pick = pickOf(entry.line.id)
-    const text = pick.qty.trim()
-    const qty = text === '' ? 0 : Number(text)
-    const valid = Number.isInteger(qty) && qty >= 0 && qty <= entry.remaining
+    const parsed = pick.qty.trim() === '' ? 0 : parseCount(pick.qty)
+    const qty = parsed ?? 0
+    const valid = parsed !== null && qty <= entry.remaining
     const amount =
       valid && qty > 0
         ? returnLineAmount(
