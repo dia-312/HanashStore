@@ -102,6 +102,9 @@ export function CustomerProfile() {
           <Link to={`/customers/${customer.id}/payment`} className={action}>
             {ar.payment.open}
           </Link>
+          <Link to={`/customers/${customer.id}/refund`} className={action}>
+            {ar.refund.open}
+          </Link>
           <Link to={`/customers/${customer.id}/return`} className={action}>
             {ar.returns.open}
           </Link>
@@ -179,6 +182,7 @@ export function CustomerProfile() {
                     <bdi>{p.number}</bdi> · <bdi>{formatMoney(p.amount)}</bdi>
                   </span>
                   <span className="flex flex-wrap gap-2">
+                    {p.kind === 'refund' && <Tag kind="plain">{ar.refund.tag}</Tag>}
                     {p.status === 'voided' && <Tag kind="bad">{ar.payment.voided}</Tag>}
                     {p.voidPending && <Tag kind="wait">{ar.payment.voidWaiting}</Tag>}
                     {p.sendState === 'pending' && <Tag kind="wait">{ar.payment.unsent}</Tag>}
@@ -187,9 +191,11 @@ export function CustomerProfile() {
                 </div>
                 <p className="text-sm opacity-80">
                   {ar.invoices.method[p.method]} · <bdi>{formatDateTime(p.paid_at)}</bdi> ·{' '}
-                  {p.invoice_number
-                    ? fill(ar.payment.withInvoice, { number: p.invoice_number })
-                    : ar.payment.standalone}
+                  {p.kind === 'refund'
+                    ? ar.refund.standalone
+                    : p.invoice_number
+                      ? fill(ar.payment.withInvoice, { number: p.invoice_number })
+                      : ar.payment.standalone}
                 </p>
                 {p.note && <p className="text-sm">{p.note}</p>}
                 {p.status === 'voided' && p.void_reason && (
@@ -203,7 +209,7 @@ export function CustomerProfile() {
                     className="min-h-11 w-fit rounded-xl border-2 border-navy/30 bg-white px-4 font-bold"
                     onClick={() => setVoiding(p)}
                   >
-                    {ar.payment.voidAction}
+                    {p.kind === 'refund' ? ar.refund.voidAction : ar.payment.voidAction}
                   </button>
                 )}
               </li>
@@ -214,10 +220,12 @@ export function CustomerProfile() {
 
       {voiding && (
         <ConfirmSheet
-          title={fill(ar.payment.voidTitle, { number: voiding.number })}
-          message={ar.payment.voidMessage}
+          title={fill(voiding.kind === 'refund' ? ar.refund.voidTitle : ar.payment.voidTitle, {
+            number: voiding.number,
+          })}
+          message={voiding.kind === 'refund' ? ar.refund.voidMessage : ar.payment.voidMessage}
           lines={[{ label: ar.payment.amount, value: formatMoney(voiding.amount) }]}
-          confirmLabel={ar.payment.voidConfirm}
+          confirmLabel={voiding.kind === 'refund' ? ar.refund.voidConfirm : ar.payment.voidConfirm}
           confirmDisabled={reason.trim() === ''}
           onCancel={() => {
             setVoiding(null)

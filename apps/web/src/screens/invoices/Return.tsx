@@ -276,6 +276,9 @@ export default function Return() {
             { label: ar.returns.before, value: formatMoney(balance) },
             { label: ar.returns.after, value: formatMoney(after) },
           ]}
+          message={
+            after < 0 ? fill(ar.refund.returnHint, { amount: formatMoney(-after) }) : undefined
+          }
           confirmLabel={ar.returns.confirm}
           busy={busy}
           error={error}

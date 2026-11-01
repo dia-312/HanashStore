@@ -267,10 +267,13 @@ class Payment(Base):
         CheckConstraint("method in ('cash','transfer','cheque')", name="payment_method_known"),
         CheckConstraint("amount > 0", name="payment_amount_positive"),
         CheckConstraint("status in ('active','voided')", name="payment_status_known"),
+        CheckConstraint("kind in ('payment','refund')", name="payment_kind_known"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(Uuid, primary_key=True)
     number: Mapped[str] = mapped_column(String, unique=True, nullable=False)
+    # A refund is money given back to the customer: same table, same voiding, the opposite sign.
+    kind: Mapped[str] = mapped_column(String, nullable=False, default="payment")
     customer_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("customers.id"), nullable=False)
     invoice_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("invoices.id"))
     method: Mapped[str] = mapped_column(String, nullable=False)

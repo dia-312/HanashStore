@@ -326,6 +326,7 @@ class SyncInvoiceLine(Out):
 class SyncPayment(Out):
     id: uuid.UUID
     number: str
+    kind: str
     customer_id: uuid.UUID
     invoice_id: uuid.UUID | None
     method: str
@@ -459,6 +460,31 @@ class PaymentCreatePayload(PaymentIn):
 
     customer_id: uuid.UUID
     paid_at: datetime  # the device clock when the rep recorded it
+
+
+class RefundCreatePayload(BaseModel):
+    """refund.create: money handed back to a customer (a return he had already paid for)."""
+
+    refund_id: uuid.UUID
+    number: DocNumber
+    customer_id: uuid.UUID
+    refunded_at: datetime  # the device clock when the rep recorded it
+    amount: Annotated[int, Field(ge=1, le=MAX_PRICE)]
+    method: PaymentMethod
+    note: Text500 | None = None
+
+    @field_validator("number")
+    @classmethod
+    def _refund_number(cls, value: str) -> str:
+        if not value.startswith("REF-"):
+            raise ValueError("a refund number looks like REF-000003")
+        return value
+
+    @model_validator(mode="after")
+    def _cheque_needs_details(self) -> "RefundCreatePayload":
+        if self.method == "cheque" and not (self.note or "").strip():
+            raise ValueError("a cheque needs its details in the note")
+        return self
 
 
 class PaymentVoidPayload(BaseModel):
