@@ -41,7 +41,9 @@ def _applied(result: dict[str, Any]) -> dict[str, Any]:
     return data
 
 
-def _sale(api: TestClient, lines: list[tuple[str, int, int]], **extra: Any) -> tuple[str, dict]:
+def _sale(
+    api: TestClient, lines: list[tuple[str, int, int]], **extra: Any
+) -> tuple[str, dict[str, Any]]:
     cid = extra.pop("customer_id", None) or helpers.customer(api)
     sale = helpers.invoice_cmd(cid, lines, **extra)
     assert helpers.push_one(api, sale)["status"] == "applied"
@@ -391,6 +393,7 @@ def test_a_return_leaves_an_audit_row(api: TestClient, db: Session) -> None:
     _applied(helpers.push_one(api, cmd))
     row = db.scalars(select(AuditLog).where(AuditLog.entity == "return")).one()
     assert row.action == "create"
+    assert row.after is not None
     assert row.after["total"] == 1000
 
 
