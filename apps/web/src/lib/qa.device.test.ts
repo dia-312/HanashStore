@@ -51,7 +51,7 @@ describe('writes at the same moment', () => {
 })
 
 describe('upgrading the stored data', () => {
-  it('a device that had the version-5 database keeps everything when the app opens it as version 6', async () => {
+  it('a device that had the version-5 database keeps everything when the app opens it as version 7', async () => {
     await db.delete()
     // The database as the M7 app left it, with what a working device would have in it.
     const old = new Dexie('sales-rep')
@@ -85,8 +85,8 @@ describe('upgrading the stored data', () => {
     await old.table('products').put({ id: 'p1', name: 'منتج', category_id: 'c1' })
     old.close()
 
-    await db.open() // the app's own definition: version 6 adds the synonym groups
-    expect(db.verno).toBe(6)
+    await db.open() // the app's own definition: version 6 adds the synonym groups, 7 two date indexes
+    expect(db.verno).toBe(7)
     expect((await db.meta.get('counters'))?.value).toEqual({ INV: 41, REC: 9, RET: 2, REF: 1 })
     expect((await db.meta.get('syncCursor'))?.value).toBe(77)
     expect((await pendingCommands()).map((c) => c.id)).toEqual(['cmd-1'])

@@ -4,6 +4,7 @@ import { ar } from './i18n/ar'
 import { startSyncLoop } from './lib/sync/engine'
 import { resumeImageDownloads, setImagesPaused } from './lib/sync/images'
 import { Catalog } from './screens/Catalog'
+import Home from './screens/Home'
 import Checkout from './screens/checkout/Checkout'
 import { CustomerProfile } from './screens/customers/CustomerProfile'
 import { EditCustomer, NewCustomer } from './screens/customers/CustomerForm'
@@ -34,8 +35,7 @@ const ReturnPick = lazy(() => import('./screens/customers/ReturnPick'))
 const Return = lazy(() => import('./screens/invoices/Return'))
 const BusinessSettings = lazy(() => import('./screens/settings/Business'))
 const Invoices = lazy(() => import('./screens/invoices/Invoices'))
-
-const pages = [{ path: 'reports', ...ar.empty.reports }]
+const Reports = lazy(() => import('./screens/reports/Reports'))
 
 const lazyPage = (page: React.ReactNode) => (
   <Suspense fallback={<p>{ar.common.loading}</p>}>{page}</Suspense>
@@ -77,10 +77,8 @@ export function App() {
             {/* Presentation mode is full screen: no navigation, nothing of the rep's app. */}
             <Route path="present/:customerId?" element={<Present />} />
             <Route element={<Shell />}>
-              <Route index element={<EmptyPage {...ar.empty.home} />} />
-              {pages.map(({ path, ...page }) => (
-                <Route key={path} path={path} element={<EmptyPage {...page} />} />
-              ))}
+              <Route index element={<Home />} />
+              <Route path="reports" element={lazyPage(<Reports />)} />
               <Route path="catalog" element={<Catalog />} />
               <Route path="customers" element={<Customers />} />
               <Route path="customers/new" element={<NewCustomer />} />

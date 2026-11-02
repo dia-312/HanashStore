@@ -1,5 +1,5 @@
 import { memo, useDeferredValue, useMemo, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { Balance } from '../../components/Balance'
 import { Tag } from '../../components/Tag'
 import { VirtualRows } from '../../components/VirtualRows'
@@ -19,10 +19,10 @@ const chip = (active: boolean) =>
 
 const SORTS: CustomerSort[] = ['name', 'balance', 'lastInvoice']
 
-const Row = memo(function Row({ item }: { item: CustomerItem }) {
+const Row = memo(function Row({ item, next }: { item: CustomerItem; next: string }) {
   return (
     <Link
-      to={`/customers/${item.id}`}
+      to={`/customers/${item.id}${next}`}
       className="flex min-h-20 items-center gap-3 rounded-xl bg-white p-3"
     >
       <span className="min-w-0 flex-1">
@@ -49,6 +49,9 @@ const Row = memo(function Row({ item }: { item: CustomerItem }) {
 })
 
 export function Customers() {
+  const [params] = useSearchParams()
+  const picking = params.get('pick') === 'payment'
+  const next = picking ? '/payment' : ''
   const [text, setText] = useState('')
   // Typing never waits for the list: React renders the results when it has a free moment.
   const q = useDeferredValue(text.trim())
@@ -63,7 +66,9 @@ export function Customers() {
   return (
     <section className="flex h-full flex-col gap-3">
       <div className="flex flex-wrap items-center gap-3">
-        <h2 className="text-2xl font-bold">{ar.customers.title}</h2>
+        <h2 className="text-2xl font-bold">
+          {picking ? ar.customers.pickForPayment : ar.customers.title}
+        </h2>
         <input
           type="search"
           value={text}
@@ -128,7 +133,7 @@ export function Customers() {
           items={items}
           estimate={88}
           keyOf={(c) => c.id}
-          render={(c) => <Row item={c} />}
+          render={(c) => <Row item={c} next={next} />}
         />
       )}
     </section>

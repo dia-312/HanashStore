@@ -152,8 +152,9 @@ Thirteen features. Each is a user story for the rep, followed by acceptance crit
 
 - Dashboard: today's sales total and invoice count, today's collections by method (for counting cash at the end of the day), this month's sales vs last month, total owed by all customers, low-stock count, out-of-stock count, unsynced changes count.
 - Reports with date range: sales by day and by month (chart + totals), sales by product/variant/category, top and slow sellers, collections by method, customer balances (sorted, with days since last payment), low and out of stock list, damaged items.
-- Sales means invoice totals minus returns in the period, excluding cancelled invoices.
-- Reports need internet (computed on the server); the dashboard shows the last synced values offline.
+- Sales means invoice totals minus returns in the period, excluding cancelled invoices. A return counts on the day it was made.
+- Dates: documents carry the device clock. The device refuses to make a dated document while its clock is shown to be wrong by more than 5 minutes; the server refuses a date more than a day ahead or before 2020 (`DATE_IN_FUTURE`, `DATE_TOO_OLD`).
+- Reports need internet (computed on the server). The dashboard is computed on the device from its own rows (same definitions), so it works offline and already includes what has not been sent.
 
 **F13. Data export and backup.** As the rep, I want my data safe.
 
@@ -579,7 +580,7 @@ REST under `/api/v1`, JSON, authenticated by session cookie on every endpoint ex
 | GET | /invoices, /invoices/{id} | List with filters, detail (with paid and remaining) |
 | GET | /invoices/{id}/pdf | Invoice PDF |
 | GET | /payments, /returns | Lists with filters |
-| GET | /reports/dashboard | Dashboard numbers |
+| - | (no /reports/dashboard) | The dashboard numbers are read on the device from its own data, so they work offline and count unsent work (M9a); the reports below are the server's |
 | GET | /reports/sales | `?group=day\|month&from=&to=` |
 | GET | /reports/products | Sales by product/variant/category, top and slow |
 | GET | /reports/collections | Payments by method and day |

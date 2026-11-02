@@ -1,0 +1,35 @@
+# M9a — Dashboard, reports and the home screen: notes
+
+Branch `m8b-dashboard-reports` (from `main` after PR 11). **Status: built and checked on the PC (unit, screen, API and WebKit tests). Waiting for the user's check on the real iPad.**
+This is the dashboard-and-reports half of SPEC milestone M9; backups, export and the production deploy stay in M9b.
+Done when (SPEC F12): the numbers of the day on the home screen, and the reports with a date range, agree with the books. Two tests prove it: the server's reports against a reference written from the rows (random histories), and a browser journey that compares the home screen (read on the device) with the server's reports.
+
+## What exists
+- **Home screen** (`screens/Home.tsx`, the index route, in the main bundle): today's sales (net of returns, with the invoice count), this month against last month (the whole of last month, and the same number of days, with the change as ▲/▼ and a word), today's collections by method (cash first, for counting the drawer; money handed back is said apart), total owed by customers (and the credit apart), low and out-of-stock counts, and what waits to be sent (with a distinct line when something was refused). Quick actions: new sale (presentation mode), record a payment (the customers list in "who paid?" mode, `?pick=payment`), stock in. Cards link to the customers list, the stock screen and the sync screen.
+- **The numbers are read on the device** (`lib/dashboard.ts`), not fetched: they work offline and already count what has not been sent (a waiting payment lowers what is owed; a waiting stock-in lifts an item out of "out"). The SPEC said "shows the last synced values offline"; this is better and is the same definitions as the server. Dexie v7 adds `paid_at` and `issued_at` indexes (payments, returns) so the home screen reads only two months of invoices and returns and yesterday's payments, never whole tables. `GET /reports/dashboard` from the SPEC is therefore not built (amended in the SPEC).
+- **Reports** (`GET /reports/*`, `services/reports.py`, online only): `sales` (by day or month, zero days filled in), `products` (by product, variant or category; top or slow sellers; the slow list starts with what sold nothing and leaves out what is no longer for sale), `collections` (by method and by day, refunds apart, voided left out), `balances` (customers with a balance, sorted, days since the last payment), `stock` (low, out, negative), `damaged` (write-offs and returned goods that were not put back). One definition of "sales" everywhere: confirmed invoices minus the credit of returns made in the period (by the return's date), cancelled never counted. Products use the invoice lines (`line_total - discount_share`, minus the credited return lines), so **the products add up to the sales total exactly**, however they are grouped (asserted).
+- **Reports screen** (`screens/reports/Reports.tsx`, lazy chunk, "التقارير"): six tabs, a period picker (today, last 7 days, this month, last month, last 90 days, last 12 months, or two dates), tables as the source of truth and plain SVG bar charts (`components/BarChart.tsx`, no chart library) that repeat them, with the time running right to left. Offline it says it needs the internet and asks for nothing. A wrong period (reversed, over two years, outside 2000–2100) is said so and nothing is requested.
+- **Dates (decision "choose the best")**: documents are dated by the iPad's clock, and a wrong clock would put a sale in the wrong month of every statement and report. Two layers: (1) **the device** refuses to make a dated document (sale, payment, refund, return, cancel, void, delivered) while there is evidence the clock is wrong — the server's time (read on every answer) differs by more than 5 minutes, or the device is earlier than its own last sync — and says why, in words (`lib/clockGuard.ts`; the banner follows the live reading, not only the one taken at sign-in); (2) **the server** refuses a command dated more than a day in the future or before 2020 (`DATE_IN_FUTURE`, `DATE_TOO_OLD`, shown on the sync screen with what to do). A few minutes of drift passes; nothing is silently corrected.
+
+## Decisions
+- Sales by period count a return on the day the **return** was made, not the day of the invoice it comes from (the SPEC's "invoice totals minus returns in the period").
+- "This month vs last month" compares with the **same number of days** of last month (and shows the whole of last month too), because comparing a half month with a whole one always looks like a fall.
+- Collections on the home screen are **net of refunds** per method, so the cash figure is what should be in the drawer; the refunds are named below.
+- Customers in credit are **not** in "total owed"; they are shown apart.
+- The clock check cannot know that the rep fixed the clock while offline until the next answer from the server; he is told to open the app online once. Rare (iPads set the time automatically) and the safe side to err on.
+- The default period of the reports is "this month so far".
+
+## Checked on the PC
+| Check | Result |
+| --- | --- |
+| API reports | `tests/test_reports.py`: a hand-worked shop (sales by day and month, the cancelled sale, the return credit floor(2900/3) = 966, collections by method with a voided payment, balances with days since payment, stock lists, write-offs and damaged returns), the Hebron day boundary in winter (UTC+2) and summer (UTC+3), the products adding up to the sales total, slow sellers, every period rule, 401 without a session, and **6 random histories** (invoices, returns, payments, refunds, cancels, voids on random dates) compared with a reference written from the rows |
+| API dates | `tests/test_dates.py`: a little drift passes; a day ahead / before 2020 refused with nothing saved; payments, refunds, voids, delivered follow the same rule; a resend gets the same answer |
+| Device | `dashboard.test.ts` (Hebron day, returns on their own day, cancelled and voided out, month vs the same days, January, a 31st over a 30-day month, refunds, owed and credit with waiting commands, low/out with waiting stock-ins, read from Dexie offline), `clockGuard.test.ts`, `reportsApi.test.ts` (periods, leap years), `Home.test.tsx`, `Reports.test.tsx` (every tab, period presets, bad period, failed report and retry, offline), `Customers.pick.test.tsx` |
+| WebKit journey | after the earlier journeys, the home screen's sales, collections and total owed equal the server's reports for today; the same screen offline; reports say they need the internet, and online show the server's numbers |
+| Size | initial JS 205 KB gzip (budget 250); the reports are a lazy chunk |
+
+## Not done / known
+- Charts have no tooltips on touch (the tables beside them have every number).
+- The reports are not exported (F13 export is M9b).
+- No per-customer sales report or per-day payment list screen (the statement covers the customer).
+- Reports use the server's current names for products and variants, not the names printed on old invoices.
