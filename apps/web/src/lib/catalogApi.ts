@@ -103,6 +103,8 @@ export interface ImportReport {
   rows: number
   mapped_columns: Record<string, string>
   ignored_columns: string[]
+  /** Other sheets of the workbook with data: only the first sheet is imported. */
+  ignored_sheets?: string[]
   errors: RowIssue[]
   errors_total: number
   new_categories: number

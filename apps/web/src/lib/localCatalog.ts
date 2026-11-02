@@ -82,9 +82,9 @@ function thumbsByProduct(images: DbImage[]): Map<string, string> {
   return new Map([...best].map(([id, image]) => [id, image.thumb_url]))
 }
 
-/** The search engine for this snapshot: built once per snapshot, so typing never rebuilds it. */
+/** The search engine for this snapshot: rebuilt only when the words in it change (see `searchFor`). */
 export function searchHits(s: Snapshot, query: string): SearchHit[] {
-  return searchFor(s, {
+  return searchFor({
     categories: s.categories,
     products: s.products,
     variants: s.variants,

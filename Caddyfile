@@ -4,6 +4,10 @@
 	servers {
 		# Keep the client IP that cloudflared / a proxy forwards, so the login rate limit sees it.
 		trusted_proxies static private_ranges
+		# With a chain (tunnel -> Caddy) the client is the right-most address that is not ours:
+		# an X-Forwarded-For a client writes itself sits at the left and is ignored. (Found in QA:
+		# without this, a different made-up address on every attempt skipped the login limit.)
+		trusted_proxies_strict
 	}
 }
 
@@ -11,7 +15,10 @@
 	encode zstd gzip
 
 	handle /api/* {
-		reverse_proxy api:8000
+		reverse_proxy api:8000 {
+			# The API trusts the first address of this header: send it exactly one, the real client.
+			header_up X-Forwarded-For {client_ip}
+		}
 	}
 
 	# Product images: the API writes them to a shared volume and Caddy serves them from it. Each file
@@ -37,5 +44,11 @@
 	header {
 		Strict-Transport-Security "max-age=31536000"
 		X-Content-Type-Options nosniff
+		# The app is never shown inside another page; nothing is sent to other sites as a referrer;
+		# no device sensor is asked for. (A full script/style policy needs a check on the iPad:
+		# the picture export draws with inline styles. See docs/QA-REPORT.md.)
+		Content-Security-Policy "frame-ancestors 'none'"
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
 	}
 }

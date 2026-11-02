@@ -13,11 +13,11 @@ import { PENDING_COMMANDS, resetAuthStore, useAuth } from '../../store'
 import { ApiError } from '../api'
 import type { CommandResult, PushResponse } from './commands'
 import { effectiveStock, pendingStock } from './effectiveStock'
-import { setSyncHooks, syncNow, syncStatus, useSync } from './engine'
+import { RETRY_MS, setSyncHooks, stopSyncRetry, syncNow, syncStatus, useSync } from './engine'
 import { CONCURRENCY, runImageQueue, setImagesPaused, useImages } from './images'
 import { discard, enqueue, markRejected, pendingCommands, rejectedCommands, retry } from './outbox'
 import { applyPage, pullAll, type PullPage } from './pull'
-import { BATCH, pushPending } from './push'
+import { BATCH, CRASH_LIMIT, pushPending } from './push'
 import { queueCount, queueDamage, queuePurchase } from './stockCommands'
 
 const variant = (id: string, extra: Partial<DbVariant> = {}): DbVariant => ({
@@ -73,6 +73,7 @@ const adjust = (id: string, counted: number) =>
   })
 
 beforeEach(async () => {
+  stopSyncRetry()
   await wipeLocalData()
   await setMeta('identity', { user: { id: 'u', name: 'Rep' }, device: { id: 'd1', name: 'iPad' } })
   resetAuthStore()
@@ -292,6 +293,92 @@ describe('push', () => {
     expect(await pendingCommands()).toHaveLength(1)
   })
 
+  describe('a command the server cannot take at all', () => {
+    const okFor = (commands: { id: string }[]): PushResponse => ({
+      results: commands.map((c) => ({ id: c.id, status: 'applied' as const })),
+      cursor: 1,
+    })
+    const crashOn = (id: string) => async (_device: string, commands: { id: string }[]) => {
+      if (commands.some((c) => c.id === id)) throw new ApiError(500, 'HTTP_ERROR', 'Server Error')
+      return okFor(commands)
+    }
+
+    it('a request the server cannot read (422) is set aside at once; the others go through', async () => {
+      const first = await enqueue('stock.damage', { variant_id: 'a', n: 1 })
+      const bad = await enqueue('stock.damage', { variant_id: 'a', n: 2 })
+      const last = await enqueue('stock.damage', { variant_id: 'a', n: 3 })
+      const sent: string[][] = []
+      const handled = await pushPending(async (_device, commands) => {
+        sent.push(commands.map((c) => c.id))
+        if (commands.some((c) => c.id === bad.id)) {
+          throw new ApiError(422, 'VALIDATION_ERROR', 'Invalid input')
+        }
+        return okFor(commands)
+      })
+      expect(handled).toBe(3)
+      expect(await pendingCommands()).toHaveLength(0)
+      const refused = await rejectedCommands()
+      expect(refused.map((c) => c.id)).toEqual([bad.id])
+      expect(refused[0]?.error).toMatchObject({ code: 'REQUEST_REFUSED', details: { status: 422 } })
+      // the whole batch once, then one by one
+      expect(sent[0]).toEqual([first.id, bad.id, last.id])
+      expect(sent.slice(1)).toEqual([[first.id], [bad.id], [last.id]])
+    })
+
+    it('a crash (500) is tried again: the ones before it go through, it and the rest wait in order', async () => {
+      const first = await enqueue('stock.damage', { variant_id: 'a', n: 1 })
+      const toxic = await enqueue('stock.damage', { variant_id: 'a', n: 2 })
+      const last = await enqueue('stock.damage', { variant_id: 'a', n: 3 })
+      await expect(pushPending(crashOn(toxic.id))).rejects.toMatchObject({ status: 500 })
+      expect((await pendingCommands()).map((c) => c.id)).toEqual([toxic.id, last.id])
+      expect(await rejectedCommands()).toHaveLength(0)
+      expect(first.id).toBeTruthy()
+    })
+
+    it(`after ${CRASH_LIMIT} crashes in a row on that command alone it is set aside and the rest go`, async () => {
+      const toxic = await enqueue('stock.damage', { variant_id: 'a', n: 1 })
+      const last = await enqueue('stock.damage', { variant_id: 'a', n: 2 })
+      for (let run = 1; run < CRASH_LIMIT; run++) {
+        await expect(pushPending(crashOn(toxic.id))).rejects.toMatchObject({ status: 500 })
+        expect(await pendingCommands()).toHaveLength(2)
+      }
+      await pushPending(crashOn(toxic.id))
+      expect((await rejectedCommands()).map((c) => c.id)).toEqual([toxic.id])
+      expect((await rejectedCommands())[0]?.error).toMatchObject({ code: 'SERVER_ERROR' })
+      expect(await pendingCommands()).toHaveLength(0)
+      expect(last.id).toBeTruthy()
+    })
+
+    it('the rep can try a set-aside command again: it gets a new id and goes back to waiting', async () => {
+      const bad = await enqueue('stock.damage', { variant_id: 'a' })
+      await pushPending(async () => {
+        throw new ApiError(422, 'VALIDATION_ERROR', 'x')
+      })
+      await retry(bad.id)
+      expect(await rejectedCommands()).toHaveLength(0)
+      expect(await pendingCommands()).toHaveLength(1)
+    })
+
+    it.each([
+      ['no connection', new ApiError(0, 'NETWORK', 'No connection')],
+      ['an expired session', new ApiError(401, 'UNAUTHENTICATED', 'Login required')],
+      ['a revoked device', new ApiError(401, 'DEVICE_REVOKED', 'revoked')],
+      ['a busy gateway', new ApiError(502, 'HTTP_ERROR', 'Bad Gateway')],
+      ['a closed gate', new ApiError(503, 'DB_DOWN', 'Database unreachable')],
+      ['too many tries', new ApiError(429, 'RATE_LIMITED', 'slow down')],
+    ])('%s leaves every command waiting and is passed on', async (_name, error) => {
+      await enqueue('stock.damage', { variant_id: 'a', n: 1 })
+      await enqueue('stock.damage', { variant_id: 'a', n: 2 })
+      await expect(
+        pushPending(async () => {
+          throw error
+        }),
+      ).rejects.toBe(error)
+      expect(await pendingCommands()).toHaveLength(2)
+      expect(await rejectedCommands()).toHaveLength(0)
+    })
+  })
+
   it('nothing is sent when there is nothing pending', async () => {
     const send = vi.fn()
     expect(await pushPending(send)).toBe(0)
@@ -455,6 +542,80 @@ describe('sync engine', () => {
     )
     await syncNow()
     expect(useSync.getState().lastError).toBe(new ApiError(0, 'NETWORK', '').code)
+  })
+})
+
+describe('trying again soon after a lost connection', () => {
+  const failing = () =>
+    vi.fn(async () => {
+      throw new TypeError('network')
+    })
+  const answering = () =>
+    vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            changes: { categories: [], products: [], variants: [], images: [] },
+            cursor: 1,
+            has_more: false,
+          }),
+          { status: 200, headers: { 'content-type': 'application/json' } },
+        ),
+    )
+
+  afterEach(() => {
+    stopSyncRetry()
+    vi.useRealTimers()
+  })
+
+  it('a failed run while the device says it is online is repeated after 2, then 5, then 15 seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false, toFake: ['setTimeout', 'clearTimeout'] })
+    const fetchStub = failing()
+    vi.stubGlobal('fetch', fetchStub)
+    await syncNow()
+    const calls = () => fetchStub.mock.calls.length
+    const first = calls()
+    expect(first).toBeGreaterThan(0)
+    for (const wait of [...RETRY_MS, 15_000]) {
+      await vi.advanceTimersByTimeAsync(wait - 1)
+      const before = calls()
+      await vi.advanceTimersByTimeAsync(1)
+      await vi.waitFor(() => expect(calls()).toBeGreaterThan(before))
+    }
+  })
+
+  it('the first run that gets through ends the retrying', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false, toFake: ['setTimeout', 'clearTimeout'] })
+    vi.stubGlobal('fetch', failing())
+    await syncNow()
+    const working = answering()
+    vi.stubGlobal('fetch', working)
+    await vi.advanceTimersByTimeAsync(RETRY_MS[0]!)
+    await vi.waitFor(() => expect(useSync.getState().lastError).toBeNull())
+    const done = working.mock.calls.length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(working.mock.calls.length).toBe(done) // nothing more is scheduled
+  })
+
+  it('offline, and after a server error, nothing is scheduled', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false, toFake: ['setTimeout', 'clearTimeout'] })
+    const serverError = vi.fn(
+      async () =>
+        new Response('{"code":"INTERNAL"}', {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        }),
+    )
+    vi.stubGlobal('fetch', serverError)
+    await syncNow()
+    const after = serverError.mock.calls.length
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(serverError.mock.calls.length).toBe(after)
+
+    Object.defineProperty(navigator, 'onLine', { value: false, configurable: true })
+    await syncNow()
+    await vi.advanceTimersByTimeAsync(60_000)
+    expect(serverError.mock.calls.length).toBe(after)
   })
 })
 

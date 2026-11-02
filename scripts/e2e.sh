@@ -22,6 +22,7 @@ curl -fs http://127.0.0.1:8090/api/health >/dev/null
 compose exec -T -e ADMIN_PASSWORD=e2e-password-123 api python -m app.cli create-user --name e2e
 
 args=()
+if [ "${1:-}" = "qa" ]; then export E2E_QA=1; args=(e2e/qa-audit.spec.ts); fi
 if [ "${1:-}" = "seed" ]; then
   MSYS_NO_PATHCONV=1 compose exec -T api python -m scripts.load_seed /seed
   export E2E_SEED=1

@@ -428,6 +428,7 @@ class ImportReport(BaseModel):
     rows: int
     mapped_columns: dict[str, str]
     ignored_columns: list[str]
+    ignored_sheets: list[str] = []
     errors: list[RowIssue]
     errors_total: int
     new_categories: int

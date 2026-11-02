@@ -257,3 +257,88 @@ def test_a_few_hundred_rows(api: TestClient, db: Session) -> None:
     assert r.status_code == 200 and r.json()["new_variants"] == 360
     assert counts(db) == (7, 120, 360, 360)
     assert stock_mismatches(db) == []
+
+
+# --- QA: what a real client's spreadsheet looks like ---------------------------------------------
+
+
+def _titled(rows: list[list[Any]], above: list[list[Any]]) -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    assert ws is not None
+    for line in above:
+        ws.append(line)
+    ws.append(AR_HEADER)
+    for row in rows:
+        ws.append(row)
+    out = io.BytesIO()
+    wb.save(out)
+    return out.getvalue()
+
+
+def test_a_price_made_by_a_formula_is_the_price_the_eye_sees(api: TestClient, db: Session) -> None:
+    # 12 * 1.3 and 0.1 + 0.2 are not exact in binary; in Excel they read 15.6 and 0.3
+    rows = [
+        ["منتج أ", "فئة", "أسود", None, 12 * 1.3, 5],
+        ["منتج ب", "فئة", "أسود", None, 0.1 + 0.2, 5],
+        ["منتج ج", "فئة", "أسود", None, 19.99 * 3, 5],
+        ["منتج د", "فئة", "أسود", None, 1250.5, 9.999999999999998],
+    ]
+    r = post(api, xlsx(rows))
+    assert r.status_code == 200, r.text
+    prices = sorted(db.scalars(select(ProductVariant.price)).all())
+    assert prices == [30, 1560, 5997, 125050]
+
+
+def test_a_third_decimal_is_still_refused(api: TestClient) -> None:
+    r = post(api, xlsx([["منتج", "فئة", None, None, 12.555, 5]]), dry_run=True)
+    assert r.json()["errors"][0]["code"] == "BAD_PRICE"
+
+
+def test_a_price_typed_as_text_with_a_currency_mark(api: TestClient, db: Session) -> None:
+    rows = [
+        ["أ", "فئة", None, "1", "₪ 12.50", 1],
+        ["ب", "فئة", None, "2", "12 شيكل", 1],
+        ["ج", "فئة", None, "3", "١٥٫٧٥ ₪", 1],
+        ["د", "فئة", None, "4", "ILS 8", 1],
+    ]
+    assert post(api, xlsx(rows)).status_code == 200
+    assert sorted(db.scalars(select(ProductVariant.price)).all()) == [800, 1200, 1250, 1575]
+
+
+def test_a_title_above_the_header_is_skipped_and_row_numbers_stay_true(
+    api: TestClient, db: Session
+) -> None:
+    above = [["شركة النور للتجارة"], [], ["قائمة الأسعار - تشرين"]]
+    good = [["أرجيلة", "أراجيل", "أسود", None, 100, 5]]
+    assert post(api, _titled(good, above)).status_code == 200
+    assert counts(db)[2] == 1
+    # an error is reported at its row in the spreadsheet (3 title rows + header + data = row 5)
+    r = post(api, _titled([["أرجيلة", "أراجيل", None, None, "abc", 5]], above), dry_run=True)
+    assert r.json()["errors"][0]["row"] == 5
+
+
+def test_a_missing_required_column_is_still_reported(api: TestClient) -> None:
+    r = post(api, xlsx([["منتج", 5]], header=["المنتج", "الكمية"]), dry_run=True)
+    codes = {(e["field"], e["code"]) for e in r.json()["errors"]}
+    assert ("price", "MISSING_COLUMN") in codes
+
+
+def test_other_sheets_with_data_are_named_in_the_report(api: TestClient, db: Session) -> None:
+    wb = Workbook()
+    first = wb.active
+    assert first is not None
+    first.title = "أراجيل"
+    first.append(AR_HEADER)
+    first.append(["أرجيلة", "أراجيل", None, None, 100, 1])
+    second = wb.create_sheet("فحم")
+    second.append(AR_HEADER)
+    second.append(["فحم كوكو", "فحم", None, None, 20, 1])
+    blank = wb.create_sheet("فارغة")
+    assert blank is not None
+    out = io.BytesIO()
+    wb.save(out)
+    r = post(api, out.getvalue(), dry_run=True)
+    body = r.json()
+    assert body["rows"] == 1
+    assert body["ignored_sheets"] == ["فحم"]  # the empty sheet is not worth a warning

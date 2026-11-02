@@ -175,6 +175,8 @@ export interface OutboxRow {
   /** `rejected` stays here, on the sync screen, until the rep discards or retries it. */
   status: 'pending' | 'rejected'
   error?: CommandError
+  /** Times in a row the server crashed on this command alone (see `pushPending`). */
+  failures?: number
 }
 
 export type SalesDb = Dexie & {

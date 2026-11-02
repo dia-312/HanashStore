@@ -210,3 +210,25 @@ describe('speed', () => {
     expect(Math.max(...times)).toBeLessThan(50)
   })
 })
+
+describe('the index is reused while its words do not change', () => {
+  it('a new snapshot with the same words gets the same engine; a changed word gets a new one', async () => {
+    const { searchFor } = await import('./search')
+    const copy = () => ({
+      categories: categories.map((c) => ({ ...c })),
+      products: products.map((p) => ({ ...p })),
+      variants: variants.map((v) => ({ ...v })),
+      synonyms: SEED_GROUPS.map((g) => ({ ...g })),
+    })
+    const first = searchFor(copy())
+    expect(searchFor(copy())).toBe(first) // same words, other objects: no rebuild
+    const edited = copy()
+    edited.variants[0] = { ...edited.variants[0]!, color: 'بنفسجي' }
+    const second = searchFor(edited)
+    expect(second).not.toBe(first)
+    expect(second.search('بنفسجي')).toHaveLength(1)
+    const noSynonyms = { ...copy(), synonyms: [] }
+    expect(searchFor(noSynonyms)).not.toBe(second)
+    expect(searchFor(noSynonyms).search('شيشة')).toEqual([])
+  })
+})

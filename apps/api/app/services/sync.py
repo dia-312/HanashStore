@@ -16,7 +16,7 @@ from typing import Any
 
 from pydantic import ValidationError
 from sqlalchemy import select, text, union_all
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DataError, IntegrityError
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -347,6 +347,29 @@ HANDLERS: dict[str, Handler] = {
 }
 
 
+def _has_nul(node: Any) -> bool:
+    """A NUL character cannot be stored in Postgres text or JSON, and a command that carries one
+    must be refused cleanly: if it crashed the request, the device would resend it for ever."""
+    if isinstance(node, str):
+        return "\x00" in node
+    if isinstance(node, dict):
+        return any(_has_nul(k) or _has_nul(v) for k, v in node.items())
+    if isinstance(node, list):
+        return any(_has_nul(v) for v in node)
+    return False
+
+
+def _scrub(node: Any) -> Any:
+    """The same data without NUL characters (an error message may echo what was sent)."""
+    if isinstance(node, str):
+        return node.replace("\x00", "")
+    if isinstance(node, dict):
+        return {_scrub(k): _scrub(v) for k, v in node.items()}
+    if isinstance(node, list):
+        return [_scrub(v) for v in node]
+    return node
+
+
 def _rejected(
     command_id: uuid.UUID, code: str, message: str, details: dict[str, Any]
 ) -> dict[str, Any]:
@@ -364,7 +387,7 @@ def _store(db: Session, device: Device, cmd: CommandIn, outcome: dict[str, Any])
             device_id=device.id,
             type=cmd.type,
             status=outcome["status"],
-            result=outcome,
+            result=_scrub(outcome),
             received_at=clock.utcnow(),
         )
     )
@@ -389,6 +412,12 @@ def process_command(db: Session, device: Device, cmd: CommandIn) -> dict[str, An
                 "This command format is not supported",
                 {"schema_version": cmd.schema_version},
             )
+        if _has_nul(cmd.payload) or "\x00" in cmd.type:
+            raise ApiError(
+                422,
+                "VALIDATION_ERROR",
+                "Text contains a character that cannot be stored",
+            )
         handler = HANDLERS.get(cmd.type)
         if handler is None:
             raise ApiError(422, "UNKNOWN_COMMAND", "Unknown command type", {"type": cmd.type})
@@ -410,7 +439,7 @@ def process_command(db: Session, device: Device, cmd: CommandIn) -> dict[str, An
             db.rollback()
             return stored
         raise
-    except (ApiError, ValidationError) as e:
+    except (ApiError, ValidationError, DataError) as e:
         # Nothing the command did is kept (also drops the change_seq it took), then the rejection
         # is stored so a resend gets the same answer.
         db.rollback()
@@ -420,6 +449,10 @@ def process_command(db: Session, device: Device, cmd: CommandIn) -> dict[str, An
                 for err in e.errors()
             ]
             outcome = _rejected(cmd.id, "VALIDATION_ERROR", "Invalid input", {"errors": errors})
+        elif isinstance(e, DataError):
+            # The database refused a value the checks let through (a date it cannot hold, text it
+            # cannot store): the command is refused and recorded, never a crash that repeats.
+            outcome = _rejected(cmd.id, "VALIDATION_ERROR", "A value cannot be stored", {})
         else:
             code = "VARIANT_NOT_FOUND" if e.code == "NOT_FOUND" else e.code
             outcome = _rejected(cmd.id, code, e.message, e.details)

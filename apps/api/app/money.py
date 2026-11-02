@@ -15,13 +15,20 @@ class MoneyError(ValueError):
     pass
 
 
+def _without_noise(value: float) -> float:
+    """Binary floats carry noise a person never sees: a price worked out by a formula in Excel
+    comes back as 15.600000000000001, and 0.1 + 0.2 as 0.30000000000000004. Six decimals keep every
+    real price (two decimals) and drop the noise; 12.555 stays 12.555 and is still refused."""
+    return round(value, 6)
+
+
 def parse_agorot(value: str | int | float | Decimal) -> int:
     """'12.50' -> 1250. At most two decimals, no negatives, never goes through binary floats
     (a float cell from Excel is read through its shortest repr, so 12.3 stays 12.30)."""
     if isinstance(value, bool):
         raise MoneyError("not a number")
     if isinstance(value, float):
-        value = repr(value)
+        value = repr(_without_noise(value))
     text = str(value).strip().translate(_ARABIC_DIGITS)
     text = text.replace("٫", ".").replace("٬", ",").replace(" ", "").replace(" ", "")
     if _THOUSANDS.match(text):
@@ -48,7 +55,7 @@ def parse_quantity(value: str | int | float | Decimal) -> int:
     if isinstance(value, bool):
         raise MoneyError("not a number")
     if isinstance(value, float):
-        value = repr(value)
+        value = repr(_without_noise(value))
     text = str(value).strip().translate(_ARABIC_DIGITS)
     if not re.fullmatch(r"\d+(\.0+)?", text):
         raise MoneyError("not a whole number")
