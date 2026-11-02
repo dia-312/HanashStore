@@ -107,6 +107,9 @@ export default function Settings() {
         <Link to="/settings/categories" className={`${button} flex items-center`}>
           {ar.settings.categories}
         </Link>
+        <Link to="/settings/synonyms" className={`${button} flex items-center`}>
+          {ar.settings.synonyms}
+        </Link>
         <Link to="/settings/import" className={`${button} flex items-center`}>
           {ar.settings.importProducts}
         </Link>

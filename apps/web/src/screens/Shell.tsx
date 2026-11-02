@@ -1,5 +1,7 @@
-import { Link, NavLink, Outlet } from 'react-router'
+import { useEffect } from 'react'
+import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import { ar, fill } from '../i18n/ar'
+import { isCatalogPath, resetCatalogFilters } from '../lib/catalogFilters'
 import { type SyncStatus } from '../lib/sync/engine'
 import { useSyncStatus } from '../lib/sync/useSyncStatus'
 import { useUpdate } from '../lib/update'
@@ -67,6 +69,11 @@ export function Shell() {
   const { lock, sessionExpired, clockOff } = useAuth()
   const { pendingTooLong } = useSyncStatus()
   const update = useUpdate()
+  // The catalog's filters last while the rep is in the catalog (a product page included).
+  const { pathname } = useLocation()
+  useEffect(() => {
+    if (!isCatalogPath(pathname)) resetCatalogFilters()
+  }, [pathname])
 
   return (
     <div className="flex h-full flex-col">

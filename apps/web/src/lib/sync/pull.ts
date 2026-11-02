@@ -12,6 +12,7 @@ import {
   type DbProduct,
   type DbReturn,
   type DbReturnLine,
+  type DbSynonymGroup,
   type DbVariant,
 } from '../../db'
 import { api } from '../api'
@@ -19,6 +20,8 @@ import { api } from '../api'
 export interface PullPage {
   changes: {
     categories: DbCategory[]
+    /** Absent from an older server. */
+    synonym_groups?: DbSynonymGroup[]
     products: DbProduct[]
     variants: DbVariant[]
     images: DbImage[]
@@ -66,6 +69,7 @@ export async function applyPage(page: PullPage): Promise<void> {
     }
   }
   await write(c.categories, db.categories as unknown as Table<DbCategory, string>)
+  await write(c.synonym_groups, db.synonym_groups as unknown as Table<DbSynonymGroup, string>)
   await write(c.products, db.products as unknown as Table<DbProduct, string>)
   await write(c.variants, db.variants as unknown as Table<DbVariant, string>)
   await write(c.images, db.images as unknown as Table<DbImage, string>)

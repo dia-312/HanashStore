@@ -459,6 +459,8 @@ Both implementations run against the same fixture file `shared/normalize_cases.j
 - راس، حجر
 - ماسك، مبسم
 
+`PUT /synonyms` saves the whole list at once: a group with an `id` is updated, one without is created, one left out is switched off (`is_active = false`, never deleted, so devices pull the removal). Terms are normalized and de-duplicated; a group needs at least two different words. The seed groups come from migration `0007`.
+
 **Matching** — tokens combined with AND; prefix match on every token (typing "ارج" finds أرجيلة); fuzzy match with 1 edit for tokens of 4+ characters; SKU exact match ranks first. Target: results in under 50 ms for 2,000 variants on an iPad.
 
 **Filters** — combinable chips above results: category, color, size, availability (in stock / low / out), price range. **Sort:** relevance (default when searching), name, best-selling (last 90 days), newest, price. Active filters persist until the rep clears them or leaves the catalog.

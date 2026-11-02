@@ -8,96 +8,20 @@ import { ar, fill } from '../../i18n/ar'
 import { clampQty, getCart, setLineQty } from '../../lib/cart'
 import { loadSnapshot } from '../../lib/localCatalog'
 import { formatMoney } from '../../lib/money'
-import {
-  buildPresentCatalog,
-  type Availability,
-  type PresentProduct,
-  type PresentVariant,
-} from '../../lib/presentation'
+import { buildPresentCatalog, type PresentProduct } from '../../lib/presentation'
 import { useSettings } from '../../lib/settings'
 import { useLive } from '../../lib/useLive'
+import { Badge, ProductDetail, Stepper } from './ProductDetail'
 
 // Presentation mode (SPEC section 10): a customer-safe catalog the rep hands over. It shows
 // products and prices only; the customer fills his own cart; only the rep, with the PIN, leaves or
 // checks out. Nothing here reads a balance, an invoice, another customer or the sync state.
 
 const ALL = 'all'
-const big = 'min-h-14 min-w-14 rounded-xl border-2 border-navy/30 bg-white text-2xl font-bold'
-
-const BADGE: Record<Availability, { shape: string; classes: string; label: string }> = {
-  available: {
-    shape: '●',
-    classes: 'border-green-700 bg-green-50 text-green-900',
-    label: ar.present.available,
-  },
-  limited: {
-    shape: '▲',
-    classes: 'border-amber-700 bg-amber-50 text-amber-900',
-    label: ar.present.limited,
-  },
-  unavailable: {
-    shape: '✕',
-    classes: 'border-red-700 bg-red-50 text-red-900',
-    label: ar.present.unavailable,
-  },
-}
-
-function Badge({ availability }: { availability: Availability }) {
-  const { shape, classes, label } = BADGE[availability]
-  return (
-    <span
-      className={`inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-sm font-bold ${classes}`}
-    >
-      <span aria-hidden="true">{shape}</span>
-      {label}
-    </span>
-  )
-}
-
 const priceText = (p: PresentProduct) =>
   p.priceMin === p.priceMax
     ? formatMoney(p.priceMin)
     : `${formatMoney(p.priceMin)} – ${formatMoney(p.priceMax)}`
-
-const variantLabel = (v: Pick<PresentVariant, 'color' | 'size'>) =>
-  [v.color, v.size].filter(Boolean).join(' · ') || ar.present.available
-
-function Stepper({
-  value,
-  max,
-  onChange,
-  label,
-}: {
-  value: number
-  max: number
-  onChange: (qty: number) => void
-  label: string
-}) {
-  return (
-    <div className="flex items-center gap-2" role="group" aria-label={label}>
-      <button
-        type="button"
-        className={big}
-        aria-label={ar.present.decrease}
-        onClick={() => onChange(value - 1)}
-      >
-        −
-      </button>
-      <bdi className="min-w-10 text-center text-xl font-bold" aria-live="polite">
-        {value}
-      </bdi>
-      <button
-        type="button"
-        className={`${big} disabled:opacity-30`}
-        aria-label={ar.present.increase}
-        disabled={value >= max}
-        onClick={() => onChange(value + 1)}
-      >
-        +
-      </button>
-    </div>
-  )
-}
 
 export default function Present() {
   const { customerId } = useParams()
@@ -116,13 +40,14 @@ export default function Present() {
   const [text, setText] = useState('')
   const q = useDeferredValue(text.trim())
   const [categoryId, setCategoryId] = useState<string | null>(null)
+  const [color, setColor] = useState<string | undefined>()
   const [productId, setProductId] = useState<string | null>(null)
   const [cartOpen, setCartOpen] = useState(false)
   const [gate, setGate] = useState<'exit' | 'done' | null>(null)
 
   const catalog = useMemo(
-    () => (snapshot ? buildPresentCatalog(snapshot, { q, hideOutOfStock }) : null),
-    [snapshot, q, hideOutOfStock],
+    () => (snapshot ? buildPresentCatalog(snapshot, { q, color, hideOutOfStock }) : null),
+    [snapshot, q, color, hideOutOfStock],
   )
 
   // Everything in the cart, with names and prices, read from the device (a variant that has since
@@ -170,6 +95,7 @@ export default function Present() {
     if (product) setProductId(null)
     else {
       setCategoryId(null)
+      setColor(undefined)
       setText('')
     }
   }
@@ -220,71 +146,7 @@ export default function Present() {
             <button type="button" onClick={goBack} className="min-h-11 w-fit font-bold underline">
               → {ar.present.back}
             </button>
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="grid gap-2">
-                {product.images[0] ? (
-                  <img
-                    src={product.images[0].full_url}
-                    alt={product.name}
-                    className="aspect-square w-full rounded-2xl bg-white object-cover"
-                    draggable={false}
-                  />
-                ) : (
-                  <Thumb url={null} className="rounded-2xl" />
-                )}
-                {product.images.length > 1 && (
-                  <div className="flex gap-2 overflow-x-auto">
-                    {product.images.map((image) => (
-                      <img
-                        key={image.id}
-                        src={image.thumb_url}
-                        alt=""
-                        className="size-16 shrink-0 rounded-lg object-cover"
-                        draggable={false}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-              <div className="grid content-start gap-3">
-                <h2 className="text-2xl font-bold">{product.name}</h2>
-                {product.description && <p>{product.description}</p>}
-                <ul className="grid gap-2">
-                  {product.variants.map((v) => {
-                    const qty = inCart(v.id)
-                    return (
-                      <li
-                        key={v.id}
-                        className="grid gap-2 rounded-xl bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center"
-                      >
-                        <span>
-                          <span className="block text-lg font-bold">{variantLabel(v)}</span>
-                          <bdi className="block font-bold">{formatMoney(v.price)}</bdi>
-                          <Badge availability={v.availability} />
-                        </span>
-                        {qty === 0 ? (
-                          <button
-                            type="button"
-                            disabled={v.available < 1}
-                            onClick={() => change(v.id, 1, v.available)}
-                            className="min-h-14 rounded-xl bg-navy px-8 text-lg font-bold text-white disabled:opacity-40"
-                          >
-                            {ar.present.add}
-                          </button>
-                        ) : (
-                          <Stepper
-                            value={qty}
-                            max={v.available}
-                            label={fill(ar.present.inCart, { n: qty })}
-                            onChange={(n) => change(v.id, n, v.available)}
-                          />
-                        )}
-                      </li>
-                    )
-                  })}
-                </ul>
-              </div>
-            </div>
+            <ProductDetail key={product.id} product={product} inCart={inCart} onChange={change} />
           </div>
         ) : atHome ? (
           <div className="mx-auto grid max-w-5xl gap-4">
@@ -311,6 +173,28 @@ export default function Present() {
             <button type="button" onClick={goBack} className="min-h-11 w-fit font-bold underline">
               → {ar.present.categories}
             </button>
+            {(catalog.colors.length > 1 || color !== undefined) && (
+              <div
+                role="group"
+                aria-label={ar.present.color}
+                className="flex gap-2 overflow-x-auto"
+              >
+                {[undefined, ...catalog.colors].map((c) => (
+                  <button
+                    key={c ?? ALL}
+                    type="button"
+                    aria-pressed={color === c}
+                    onClick={() => setColor(c)}
+                    className={`min-h-12 shrink-0 rounded-full border-2 px-5 text-lg font-bold ${
+                      color === c ? 'border-navy bg-navy text-white' : 'border-navy/30 bg-white'
+                    }`}
+                  >
+                    {color === c && <span aria-hidden="true">✓ </span>}
+                    {c ?? ar.present.allColors}
+                  </button>
+                ))}
+              </div>
+            )}
             {shown.length === 0 ? (
               <p className="py-10 text-center text-lg">{ar.present.noProducts}</p>
             ) : (

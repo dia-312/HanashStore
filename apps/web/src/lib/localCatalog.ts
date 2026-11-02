@@ -3,6 +3,7 @@ import {
   type DbCategory,
   type DbImage,
   type DbProduct,
+  type DbSynonymGroup,
   type DbVariant,
   type OutboxRow,
 } from '../db'
@@ -14,7 +15,7 @@ import type {
   Variant,
   VariantListItem,
 } from './catalogApi'
-import { normalizeArabic } from './normalize'
+import { searchFor, type SearchHit } from './search'
 import { pendingStock } from './sync/effectiveStock'
 
 /** Out = nothing left; low = at or under the alert level (SPEC section 4, F3). */
@@ -30,17 +31,20 @@ export interface Snapshot {
   variants: DbVariant[]
   images: DbImage[]
   pending: OutboxRow[]
+  /** The groups of words that mean the same for search; none = no synonyms. */
+  synonyms?: DbSynonymGroup[]
 }
 
 export async function loadSnapshot(): Promise<Snapshot> {
-  const [categories, products, variants, images, pending] = await Promise.all([
+  const [categories, products, variants, images, pending, synonyms] = await Promise.all([
     db.categories.toArray(),
     db.products.toArray(),
     db.variants.toArray(),
     db.images.toArray(),
     db.outbox.where('status').equals('pending').sortBy('seq'),
+    db.synonym_groups.toArray(),
   ])
-  return { categories, products, variants, images, pending }
+  return { categories, products, variants, images, pending, synonyms }
 }
 
 export async function loadProductSnapshot(productId: string): Promise<Snapshot> {
@@ -78,17 +82,45 @@ function thumbsByProduct(images: DbImage[]): Map<string, string> {
   return new Map([...best].map(([id, image]) => [id, image.thumb_url]))
 }
 
-/** Every typed word must appear in the product's normalized search text (SPEC section 9 basics). */
-export function matchesSearch(searchText: string, query: string): boolean {
-  const tokens = normalizeArabic(query).split(' ').filter(Boolean)
-  return tokens.every((token) => searchText.includes(token))
+/** The search engine for this snapshot: built once per snapshot, so typing never rebuilds it. */
+export function searchHits(s: Snapshot, query: string): SearchHit[] {
+  return searchFor(s, {
+    categories: s.categories,
+    products: s.products,
+    variants: s.variants,
+    synonyms: s.synonyms,
+  }).search(query)
 }
+
+export type SortKey = 'relevance' | 'name' | 'bestselling' | 'newest' | 'price_low' | 'price_high'
 
 export interface ProductFilter {
   q?: string
   categoryId?: string
   includeInactive?: boolean
+  /** Variant filters: a product is listed when at least one of its variants fits all of them. */
+  color?: string
+  size?: string
+  availability?: StockStatus
+  /** Agorot, inclusive. */
+  priceMin?: number
+  priceMax?: number
+  sort?: SortKey
+  /** Units sold in the last 90 days per product, for the best-selling order. */
+  sold?: Map<string, number>
 }
+
+const hasVariantFilter = (f: ProductFilter) =>
+  f.color !== undefined ||
+  f.size !== undefined ||
+  f.availability !== undefined ||
+  f.priceMin !== undefined ||
+  f.priceMax !== undefined
+
+const variantLabel = (v: Pick<DbVariant, 'color' | 'size'>) =>
+  [v.color, v.size].filter(Boolean).join(' · ')
+
+type ListItem = ProductListItem & { score: number }
 
 export function buildProductList(s: Snapshot, filter: ProductFilter = {}): ProductListItem[] {
   const categoryNames = new Map(s.categories.map((c) => [c.id, c.name]))
@@ -100,12 +132,28 @@ export function buildProductList(s: Snapshot, filter: ProductFilter = {}): Produ
     list.push(v)
     byProduct.set(v.product_id, list)
   }
-  const items: ProductListItem[] = []
+  const query = filter.q?.trim() ?? ''
+  const hits = query ? new Map(searchHits(s, query).map((h) => [h.productId, h])) : null
+  const variantFiltered = hasVariantFilter(filter)
+  const fits = (v: ReturnType<typeof withEffectiveStock>[number], hit: SearchHit | undefined) =>
+    (!hit || hit.variantIds.length === 0 || hit.variantIds.includes(v.id)) &&
+    (filter.color === undefined || v.color === filter.color) &&
+    (filter.size === undefined || v.size === filter.size) &&
+    (filter.availability === undefined || v.status === filter.availability) &&
+    (filter.priceMin === undefined || v.price >= filter.priceMin) &&
+    (filter.priceMax === undefined || v.price <= filter.priceMax)
+
+  const items: ListItem[] = []
   for (const p of s.products) {
     if (!p.is_active && !filter.includeInactive) continue
     if (filter.categoryId && p.category_id !== filter.categoryId) continue
-    if (filter.q && !matchesSearch(p.search_text, filter.q)) continue
+    const hit = hits?.get(p.id)
+    if (hits && !hit) continue
     const variants = byProduct.get(p.id) ?? []
+    const matched = variants.filter((v) => fits(v, hit))
+    if (variantFiltered && matched.length === 0) continue
+    // Only worth pointing out when the words or filters picked some of the variants, not all.
+    const pointOut = matched.length > 0 && matched.length < variants.length
     items.push({
       id: p.id,
       name: p.name,
@@ -119,9 +167,68 @@ export function buildProductList(s: Snapshot, filter: ProductFilter = {}): Produ
       stock_total: variants.reduce((sum, v) => sum + v.stock_qty, 0),
       low_count: variants.filter((v) => v.stock_qty > 0 && v.stock_qty <= v.min_stock).length,
       out_count: variants.filter((v) => v.stock_qty <= 0).length,
+      matched_variants: pointOut ? matched.map((v) => ({ id: v.id, label: variantLabel(v) })) : [],
+      score: hit?.score ?? 0,
     })
   }
-  return items.sort((a, b) => collator.compare(a.name, b.name) || a.id.localeCompare(b.id))
+  const byName = (a: ListItem, b: ListItem) =>
+    collator.compare(a.name, b.name) || a.id.localeCompare(b.id)
+  const sold = (item: ListItem) => filter.sold?.get(item.id) ?? 0
+  const order: Record<SortKey, (a: ListItem, b: ListItem) => number> = {
+    relevance: (a, b) => b.score - a.score || byName(a, b),
+    name: byName,
+    // Product ids are time-ordered (UUIDv7): a larger id was made later.
+    newest: (a, b) => b.id.localeCompare(a.id),
+    bestselling: (a, b) => sold(b) - sold(a) || byName(a, b),
+    price_low: (a, b) => (a.price_min ?? Infinity) - (b.price_min ?? Infinity) || byName(a, b),
+    price_high: (a, b) => (b.price_max ?? -Infinity) - (a.price_max ?? -Infinity) || byName(a, b),
+  }
+  return items.sort(order[filter.sort ?? 'relevance']).map((item) => {
+    const { score, ...rest } = item
+    void score
+    return rest
+  })
+}
+
+/** What the filter chips can offer: the colours and sizes that exist on active variants. */
+export function buildFacets(s: Snapshot): { colors: string[]; sizes: string[] } {
+  const live = new Set(s.products.filter((p) => p.is_active).map((p) => p.id))
+  const colors = new Set<string>()
+  const sizes = new Set<string>()
+  for (const v of s.variants) {
+    if (!v.is_active || !live.has(v.product_id)) continue
+    if (v.color) colors.add(v.color)
+    if (v.size) sizes.add(v.size)
+  }
+  const natural = new Intl.Collator('ar', { numeric: true })
+  return {
+    colors: [...colors].sort(collator.compare),
+    sizes: [...sizes].sort(natural.compare),
+  }
+}
+
+const NINETY_DAYS = 90 * 24 * 60 * 60 * 1000
+
+/** Units sold per product over the last 90 days (cancelled invoices don't count). */
+export async function loadSoldQty(now = Date.now()): Promise<Map<string, number>> {
+  const since = new Date(now - NINETY_DAYS).toISOString()
+  const invoices = (await db.invoices.where('issued_at').aboveOrEqual(since).toArray()).filter(
+    (i) => i.status === 'confirmed',
+  )
+  const [lines, variants] = await Promise.all([
+    db.invoice_lines
+      .where('invoice_id')
+      .anyOf(invoices.map((i) => i.id))
+      .toArray(),
+    db.variants.toArray(),
+  ])
+  const productOf = new Map(variants.map((v) => [v.id, v.product_id]))
+  const sold = new Map<string, number>()
+  for (const line of lines) {
+    const productId = productOf.get(line.variant_id)
+    if (productId) sold.set(productId, (sold.get(productId) ?? 0) + line.qty)
+  }
+  return sold
 }
 
 export function buildCategories(s: Snapshot): Category[] {
@@ -159,10 +266,11 @@ export function buildVariantList(s: Snapshot, q = ''): VariantListItem[] {
   const products = new Map(s.products.map((p) => [p.id, p]))
   const thumbs = thumbsByProduct(s.images)
   const items: VariantListItem[] = []
+  const found = q.trim() ? new Set(searchHits(s, q).flatMap((h) => h.variantIds)) : null
   for (const v of withEffectiveStock(s)) {
     const product = products.get(v.product_id)
     if (!v.is_active || !product || !product.is_active) continue
-    if (q && !matchesSearch(product.search_text, q)) continue
+    if (found && !found.has(v.id)) continue
     items.push({
       id: v.id,
       product_id: v.product_id,

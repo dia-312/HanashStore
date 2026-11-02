@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { db, wipeLocalData, type DbProduct, type DbVariant } from '../db'
@@ -6,6 +6,7 @@ import { ar } from '../i18n/ar'
 import { useSync } from '../lib/sync/engine'
 import { normalizeArabic } from '../lib/normalize'
 import { readPerf } from '../lib/perf'
+import { isCatalogPath, resetCatalogFilters } from '../lib/catalogFilters'
 import { Catalog } from './Catalog'
 
 // jsdom has no layout, so the real virtualizer would show no rows. The library is not what is tested
@@ -76,6 +77,7 @@ beforeEach(async () => {
     change_seq: 1,
   })
   useSync.setState({ firstSyncDone: true })
+  resetCatalogFilters()
 })
 
 afterEach(() => {
@@ -223,5 +225,171 @@ describe('Catalog timing', () => {
     renderCatalog()
     await screen.findByText('منتج 1')
     await waitFor(async () => expect(typeof (await readPerf())?.catalogOpenMs).toBe('number'))
+  })
+})
+
+describe('filters and order', () => {
+  const names = () =>
+    screen
+      .getAllByRole('link')
+      .map((a) => /منتج \d/.exec(a.textContent ?? '')?.[0])
+      .filter(Boolean)
+
+  const openFilters = async () => {
+    await screen.findByText('منتج 1')
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(ar.catalog.filters) }))
+    return within(await screen.findByLabelText(ar.catalog.filters))
+  }
+
+  beforeEach(async () => {
+    await addProduct(1, { color: 'أسود', price: 3000, stock_qty: 20 })
+    await addProduct(2, { color: 'أحمر', price: 1000, stock_qty: 0 })
+    await addProduct(3, { color: 'أسود', price: 2000, stock_qty: 1, min_stock: 2 })
+  })
+
+  it('a colour chip narrows the list, the button counts it, and clearing brings everything back', async () => {
+    renderCatalog()
+    const panel = await openFilters()
+    fireEvent.click(panel.getByRole('button', { name: 'أحمر' }))
+    await waitFor(() => expect(names()).toEqual(['منتج 2']))
+    expect(screen.getByRole('button', { name: /الفلاتر \(1\)/ })).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: new RegExp(ar.catalog.clearFilters) }))
+    await waitFor(() => expect(names()).toHaveLength(3))
+  })
+
+  it('availability and price range combine with the colour', async () => {
+    renderCatalog()
+    const panel = await openFilters()
+    fireEvent.click(panel.getByRole('button', { name: 'أسود' }))
+    fireEvent.click(panel.getByRole('button', { name: new RegExp(ar.status.low) }))
+    await waitFor(() => expect(names()).toEqual(['منتج 3']))
+    fireEvent.click(panel.getByRole('button', { name: new RegExp(ar.status.low) })) // off again
+    fireEvent.change(panel.getByLabelText(ar.catalog.priceFrom), { target: { value: '٢٥' } })
+    await waitFor(() => expect(names()).toEqual(['منتج 1']))
+    fireEvent.change(panel.getByLabelText(ar.catalog.priceFrom), { target: { value: '' } })
+    fireEvent.change(panel.getByLabelText(ar.catalog.priceTo), { target: { value: '15' } })
+    await waitFor(() => expect(screen.queryByText('منتج 1')).toBeNull())
+    expect(screen.queryByText('منتج 3')).toBeNull()
+  })
+
+  it('a price that is not a number is said so and changes nothing', async () => {
+    renderCatalog()
+    const panel = await openFilters()
+    fireEvent.change(panel.getByLabelText(ar.catalog.priceFrom), { target: { value: 'abc' } })
+    expect(await panel.findByText(ar.catalog.badPriceRange)).toBeTruthy()
+    expect(names()).toHaveLength(3)
+  })
+
+  it('sorts by price both ways', async () => {
+    renderCatalog()
+    const panel = await openFilters()
+    const sort = panel.getByLabelText(ar.catalog.sort)
+    fireEvent.change(sort, { target: { value: 'price_low' } })
+    await waitFor(() => expect(names()).toEqual(['منتج 2', 'منتج 3', 'منتج 1']))
+    fireEvent.change(sort, { target: { value: 'price_high' } })
+    await waitFor(() => expect(names()).toEqual(['منتج 1', 'منتج 3', 'منتج 2']))
+  })
+
+  it('best-selling counts the last 90 days of confirmed invoices only', async () => {
+    const day = (ago: number) => new Date(Date.now() - ago * 86_400_000).toISOString()
+    const invoice = (id: string, issued: string, status: 'confirmed' | 'cancelled') => ({
+      id,
+      number: id,
+      customer_id: 'c',
+      status,
+      subtotal: 0,
+      discount: 0,
+      total: 0,
+      note: null,
+      issued_at: issued,
+      delivered_at: null,
+      cancelled_at: null,
+      cancel_reason: null,
+      change_seq: 1,
+    })
+    const line = (id: string, invoiceId: string, variantId: string, qty: number) => ({
+      id,
+      invoice_id: invoiceId,
+      variant_id: variantId,
+      product_name: '',
+      variant_label: '',
+      qty,
+      unit_price: 0,
+      line_total: 0,
+      discount_share: 0,
+      sort_order: 0,
+      change_seq: 1,
+    })
+    await db.invoices.bulkPut([
+      invoice('i1', day(10), 'confirmed'),
+      invoice('i2', day(100), 'confirmed'), // too old
+      invoice('i3', day(5), 'cancelled'), // cancelled
+    ])
+    await db.invoice_lines.bulkPut([
+      line('l1', 'i1', 'v3', 4),
+      line('l2', 'i1', 'v1', 1),
+      line('l3', 'i2', 'v2', 50),
+      line('l4', 'i3', 'v2', 50),
+    ])
+    renderCatalog()
+    const panel = await openFilters()
+    fireEvent.change(panel.getByLabelText(ar.catalog.sort), { target: { value: 'bestselling' } })
+    await waitFor(() => expect(names()).toEqual(['منتج 3', 'منتج 1', 'منتج 2']))
+  })
+
+  it('the filters are still there when the catalog is opened again, until they are reset', async () => {
+    const first = renderCatalog()
+    const panel = await openFilters()
+    fireEvent.click(panel.getByRole('button', { name: 'أحمر' }))
+    await waitFor(() => expect(names()).toEqual(['منتج 2']))
+    first.unmount()
+    renderCatalog()
+    await waitFor(() => expect(names()).toEqual(['منتج 2']))
+    cleanup()
+    resetCatalogFilters() // what leaving the catalog does
+    renderCatalog()
+    await waitFor(() => expect(names()).toHaveLength(3))
+  })
+
+  it('only the catalog and a product page count as the catalog', () => {
+    expect(['/catalog', '/catalog/abc'].every(isCatalogPath)).toBe(true)
+    expect(['/', '/customers', '/present', '/catalogue'].some(isCatalogPath)).toBe(false)
+  })
+
+  it('searching says which variants matched and opens the product on them', async () => {
+    await db.products.put({
+      id: 'p9',
+      category_id: 'c1',
+      name: 'بربيش',
+      description: null,
+      search_text: '',
+      is_active: true,
+      change_seq: 1,
+    })
+    await db.variants.bulkPut(
+      [
+        ['v9a', 'أسود'],
+        ['v9b', 'أخضر'],
+      ].map(([id, color]) => ({
+        id: id!,
+        product_id: 'p9',
+        sku: `SKU-${id}`,
+        color: color!,
+        size: null,
+        price: 500,
+        min_stock: 1,
+        stock_qty: 9,
+        is_active: true,
+        change_seq: 1,
+      })),
+    )
+    renderCatalog()
+    await screen.findByText('منتج 1')
+    fireEvent.change(screen.getByRole('searchbox', { name: ar.catalog.search }), {
+      target: { value: 'بربيش اسود' },
+    })
+    const link = await screen.findByRole('link', { name: /بربيش/ })
+    expect(link.textContent).toContain('مطابق: أسود')
+    expect(link.getAttribute('href')).toBe('/catalog/p9?hl=v9a')
   })
 })

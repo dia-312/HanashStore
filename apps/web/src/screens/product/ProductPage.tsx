@@ -1,5 +1,5 @@
 import { useMemo, useState, type FormEvent } from 'react'
-import { Link, useNavigate, useParams } from 'react-router'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { ErrorNotice, OfflineNotice } from '../../components/Notices'
 import { db } from '../../db'
@@ -157,6 +157,11 @@ function NewProduct() {
 
 function ExistingProduct({ id }: { id: string }) {
   const categories = useCategories()
+  const [params] = useSearchParams()
+  const highlight = useMemo(
+    () => new Set((params.get('hl') ?? '').split(',').filter(Boolean)),
+    [params],
+  )
   // undefined while the device is being read, null when it has no such product.
   const product = useLive(async () => buildProductDetail(await loadProductSnapshot(id), id), [id])
   const [failed, setFailed] = useState<string | null>(null)
@@ -193,7 +198,12 @@ function ExistingProduct({ id }: { id: string }) {
         onSaved={() => undefined}
       />
       <ImagesSection productId={product.id} images={product.images} onChange={refresh} />
-      <VariantsSection productId={product.id} variants={product.variants} onChange={refresh} />
+      <VariantsSection
+        productId={product.id}
+        variants={product.variants}
+        highlight={highlight}
+        onChange={refresh}
+      />
       <div>
         <button
           type="button"

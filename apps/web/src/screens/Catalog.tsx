@@ -5,13 +5,21 @@ import { StatusBadge } from '../components/StatusBadge'
 import { Thumb } from '../components/Thumb'
 import { ar, fill } from '../i18n/ar'
 import type { ProductListItem } from '../lib/catalogApi'
-import { buildCategories, buildProductList, loadSnapshot } from '../lib/localCatalog'
+import { activeFilterCount, useCatalogFilters } from '../lib/catalogFilters'
+import {
+  buildCategories,
+  buildFacets,
+  buildProductList,
+  loadSnapshot,
+  loadSoldQty,
+} from '../lib/localCatalog'
 import { formatMoney } from '../lib/money'
 import { useOnline } from '../lib/online'
 import { recordPerf } from '../lib/perf'
 import { useSync } from '../lib/sync/engine'
 import { useSyncOnOpen } from '../lib/sync/useSyncOnOpen'
 import { useLive } from '../lib/useLive'
+import { CatalogFilters } from './CatalogFilters'
 
 type View = 'grid' | 'list'
 const VIEW_KEY = 'catalog-view'
@@ -35,6 +43,29 @@ function priceText(item: ProductListItem): string {
   return item.price_min === item.price_max
     ? formatMoney(item.price_min)
     : `${formatMoney(item.price_min)} – ${formatMoney(item.price_max)}`
+}
+
+/** Where a search or filter picked only some variants: say which, and open the product on them. */
+const productLink = (item: ProductListItem) => {
+  const picked = item.matched_variants ?? []
+  return picked.length > 0
+    ? `/catalog/${item.id}?hl=${picked.map((v) => v.id).join(',')}`
+    : `/catalog/${item.id}`
+}
+
+function MatchedHint({ item }: { item: ProductListItem }) {
+  const picked = item.matched_variants ?? []
+  if (picked.length === 0) return null
+  const shown = picked.slice(0, 2).map((v) => v.label || '—')
+  const labels = shown.join('، ')
+  return (
+    <span className="block truncate text-sm font-bold">
+      <span aria-hidden="true">◆ </span>
+      {picked.length > shown.length
+        ? fill(ar.catalog.matchingMore, { labels, n: picked.length - shown.length })
+        : fill(ar.catalog.matching, { labels })}
+    </span>
+  )
 }
 
 function ProductBadge({ item }: { item: ProductListItem }) {
@@ -64,7 +95,7 @@ const ProductTile = memo(function ProductTile({
   if (asList) {
     return (
       <Link
-        to={`/catalog/${item.id}`}
+        to={productLink(item)}
         className="flex min-h-20 items-center gap-3 rounded-xl bg-white p-2"
       >
         <Thumb url={item.thumb_url} className="size-16 shrink-0 rounded-lg" />
@@ -74,6 +105,7 @@ const ProductTile = memo(function ProductTile({
             {item.category_name} ·{' '}
             {inactive || fill(ar.catalog.variantsCount, { n: item.variant_count })}
           </span>
+          <MatchedHint item={item} />
         </span>
         <span className="shrink-0 text-end">
           <bdi className="block font-bold">{priceText(item)}</bdi>
@@ -83,11 +115,12 @@ const ProductTile = memo(function ProductTile({
     )
   }
   return (
-    <Link to={`/catalog/${item.id}`} className="block overflow-hidden rounded-xl bg-white">
+    <Link to={productLink(item)} className="block overflow-hidden rounded-xl bg-white">
       <Thumb url={item.thumb_url} />
       <span className="grid gap-1 p-3">
         <span className="line-clamp-2 min-h-12 font-bold">{item.name}</span>
         <span className="text-sm opacity-70">{inactive || item.category_name}</span>
+        <MatchedHint item={item} />
         <bdi className="font-bold">{priceText(item)}</bdi>
         <span>
           <ProductBadge item={item} />
@@ -198,10 +231,12 @@ export function Catalog() {
   const [text, setText] = useState('')
   // Typing never waits for the list: React renders the results when it has a free moment.
   const q = useDeferredValue(text.trim())
-  const [categoryId, setCategoryId] = useState<string | undefined>()
-  const [includeInactive, setIncludeInactive] = useState(false)
+  const filters = useCatalogFilters()
+  const { categoryId, includeInactive, sort } = filters
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const [view, setView] = useState<View>(loadView)
   const snapshot = useLive(loadSnapshot, [])
+  const sold = useLive(async () => (sort === 'bestselling' ? loadSoldQty() : undefined), [sort])
 
   // How long opening this screen took, shown in Settings (the budget is 300 ms, SPEC section 17).
   const [openedAt] = useState(() => performance.now())
@@ -213,10 +248,42 @@ export function Catalog() {
   }, [snapshot, openedAt])
 
   const categories = useMemo(() => (snapshot ? buildCategories(snapshot) : []), [snapshot])
-  const items = useMemo(
-    () => (snapshot ? buildProductList(snapshot, { q, categoryId, includeInactive }) : []),
-    [snapshot, q, categoryId, includeInactive],
+  const facets = useMemo(
+    () => (snapshot ? buildFacets(snapshot) : { colors: [], sizes: [] }),
+    [snapshot],
   )
+  const { color, size, availability, priceMin, priceMax } = filters
+  const items = useMemo(
+    () =>
+      snapshot
+        ? buildProductList(snapshot, {
+            q,
+            categoryId,
+            includeInactive,
+            color,
+            size,
+            availability,
+            priceMin,
+            priceMax,
+            sort,
+            sold,
+          })
+        : [],
+    [
+      snapshot,
+      q,
+      categoryId,
+      includeInactive,
+      color,
+      size,
+      availability,
+      priceMin,
+      priceMax,
+      sort,
+      sold,
+    ],
+  )
+  const activeCount = activeFilterCount(filters)
 
   const chooseView = (next: View) => {
     setView(next)
@@ -279,7 +346,7 @@ export function Catalog() {
         <button
           type="button"
           aria-pressed={categoryId === undefined}
-          onClick={() => setCategoryId(undefined)}
+          onClick={() => filters.set({ categoryId: undefined })}
           className={chip(categoryId === undefined)}
         >
           {ar.catalog.all}
@@ -289,7 +356,7 @@ export function Catalog() {
             key={c.id}
             type="button"
             aria-pressed={categoryId === c.id}
-            onClick={() => setCategoryId(c.id)}
+            onClick={() => filters.set({ categoryId: c.id })}
             className={chip(categoryId === c.id)}
           >
             {c.name}
@@ -298,12 +365,31 @@ export function Catalog() {
         <button
           type="button"
           aria-pressed={includeInactive}
-          onClick={() => setIncludeInactive((v) => !v)}
+          onClick={() => filters.set({ includeInactive: !includeInactive })}
           className={chip(includeInactive)}
         >
           {ar.catalog.inactive}
         </button>
+        <button
+          type="button"
+          aria-expanded={filtersOpen}
+          onClick={() => setFiltersOpen((v) => !v)}
+          className={chip(filtersOpen)}
+        >
+          <span aria-hidden="true">⚙ </span>
+          {activeCount > 0 ? fill(ar.catalog.filtersOn, { n: activeCount }) : ar.catalog.filters}
+        </button>
+        {activeCount > 0 && (
+          <button
+            type="button"
+            onClick={() => filters.clear()}
+            className="min-h-11 shrink-0 rounded-full border-2 border-navy/30 bg-white px-4 font-bold"
+          >
+            ✕ {ar.catalog.clearFilters}
+          </button>
+        )}
       </div>
+      {filtersOpen && <CatalogFilters colors={facets.colors} sizes={facets.sizes} />}
       {snapshot === undefined ? (
         <Skeleton />
       ) : nothingYet ? (
@@ -314,7 +400,7 @@ export function Catalog() {
           <Skeleton />
         </>
       ) : (
-        <ProductList items={items} filtered={q !== '' || categoryId !== undefined} view={view} />
+        <ProductList items={items} filtered={q !== '' || activeCount > 0} view={view} />
       )}
     </section>
   )

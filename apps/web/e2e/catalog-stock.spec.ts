@@ -475,7 +475,12 @@ test('offline: add a customer, fill a cart in presentation mode, check out with 
   await page.getByRole('link', { name: ar.customers.present }).click()
   await page.getByRole('button', { name: new RegExp(ar.present.all) }).click()
   await page.getByRole('button', { name: new RegExp(COAL) }).click()
-  const forty = page.locator('li', { hasText: 'حبة 40' })
+  // sizes are buttons that pick the variant; the chosen one has its own card with the add button
+  await page
+    .getByRole('group', { name: ar.present.size })
+    .getByRole('button', { name: /حبة 40/ })
+    .click()
+  const forty = page.getByRole('region', { name: ar.present.chosen })
   await forty.getByRole('button', { name: ar.present.add }).click()
   await forty.getByRole('button', { name: ar.present.increase }).click()
   await forty.getByRole('button', { name: ar.present.increase }).click()
@@ -826,4 +831,77 @@ test('refund: money handed back offline, sent on reconnect, then voided', async 
     })
     .toBe('voided')
   expect((await pulled()).changes.customers.find((c) => c.id === customerId)?.balance).toBe(before)
+})
+
+test('M8: search with synonyms and typos, filters, synonyms from Settings, presentation search', async () => {
+  const PALM = 'شيشة نخلة صغيرة'
+  const search = () => page.getByRole('searchbox', { name: ar.catalog.search })
+  const tile = (name: string) => page.getByRole('link', { name: new RegExp(name) }).first()
+  await goTo(ar.nav.catalog)
+
+  // the seeded synonym group makes "ارجيلة" find a product whose name says "شيشة"; a typo still finds it
+  await search().fill('ارجيلة')
+  await expect(tile(PALM)).toBeVisible()
+  await expect(page.getByRole('link', { name: new RegExp(COAL) })).toHaveCount(0)
+  await search().fill('شيشا نخله')
+  await expect(tile(PALM)).toBeVisible()
+
+  // words that pick one variant say which, and the product opens on it
+  await search().fill('نخله ازرق')
+  await expect(tile(PALM)).toContainText('مطابق: أزرق')
+  expect(await tile(PALM).getAttribute('href')).toMatch(/\?hl=/)
+
+  // filters: a colour narrows the list, clearing brings everything back
+  await search().fill('')
+  await page.getByRole('button', { name: new RegExp(ar.catalog.filters) }).click()
+  const panel = page.getByLabel(ar.catalog.filters)
+  await panel.getByRole('button', { name: 'فضي', exact: true }).click()
+  await expect(tile(PALM)).toBeVisible()
+  await expect(page.getByRole('link', { name: /فوهة زجاج/ })).toHaveCount(0)
+  await page.getByRole('button', { name: new RegExp(ar.catalog.clearFilters) }).click()
+  await expect(page.getByRole('link', { name: /فوهة زجاج/ })).toBeVisible()
+
+  // the order: dearest first puts the palm hookah (up to 155.50) before the coal (24.00)
+  await panel.getByLabel(ar.catalog.sort).selectOption('price_high')
+  await expect(page.getByRole('link').filter({ hasText: /₪/ }).first()).toContainText(PALM)
+
+  // a synonym group added in Settings reaches the device and works at once
+  await goTo(ar.nav.settings)
+  await page.getByRole('link', { name: ar.settings.synonyms }).click()
+  await page.getByRole('button', { name: new RegExp(ar.synonyms.add) }).click()
+  await page.getByRole('textbox', { name: ar.synonyms.words }).last().fill('جمر، ملقط')
+  await page.getByRole('button', { name: ar.synonyms.save }).click()
+  await expect(page.getByText(ar.synonyms.saved)).toBeVisible()
+  await goTo(ar.nav.catalog)
+  await search().fill('جمر ستانلس')
+  await expect(page.getByRole('link', { name: /ملقط فحم ستانلس/ })).toBeVisible({
+    timeout: 60_000,
+  })
+
+  // offline, search is the same: it all runs on the device
+  await page.context().setOffline(true)
+  await search().fill('')
+  await search().fill('ارجيلة')
+  await expect(tile(PALM)).toBeVisible()
+
+  // presentation mode: search with a synonym, pick a colour, the price follows; no links anywhere
+  await page.getByRole('link', { name: ar.catalog.present }).click()
+  await page.getByRole('searchbox', { name: ar.present.search }).fill('ارجيلة')
+  await page.getByRole('button', { name: new RegExp(PALM) }).click()
+  const palm = await findProduct(PALM)
+  const silver = palm.variants.find((v) => v.color === 'فضي')!
+  await page
+    .getByRole('group', { name: ar.present.color })
+    .getByRole('button', { name: /فضي/ })
+    .click()
+  await expect(page.getByRole('region', { name: ar.present.chosen })).toContainText(
+    (silver.price / 100).toFixed(2),
+  )
+  await expect(page.locator('a')).toHaveCount(0)
+  await page.context().setOffline(false)
+
+  // leaving needs the PIN
+  await page.getByRole('button', { name: ar.present.exit }).click()
+  await pressPin(PIN)
+  await expect(page.getByRole('searchbox', { name: ar.catalog.search })).toBeVisible()
 })

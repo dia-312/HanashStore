@@ -5,7 +5,7 @@ import {
   buildProductDetail,
   buildProductList,
   buildVariantList,
-  matchesSearch,
+  buildFacets,
   stockStatus,
   type Snapshot,
 } from './localCatalog'
@@ -87,13 +87,77 @@ describe('stockStatus', () => {
   })
 })
 
-describe('search', () => {
-  it('matches every typed word against the normalized text, whatever the spelling', () => {
-    const text = normalizeArabic('أرجيلة كبيرة أراجيل')
-    expect(matchesSearch(text, 'ارجيله')).toBe(true)
-    expect(matchesSearch(text, 'كبيره ارجيله')).toBe(true)
-    expect(matchesSearch(text, 'فحم')).toBe(false)
-    expect(matchesSearch(text, '   ')).toBe(true) // nothing typed: everything matches
+describe('search, filters and order', () => {
+  const rich = () =>
+    snapshot({
+      products: [
+        product('p1', 'أرجيلة كبيرة'),
+        product('p2', 'أرجيلة صغيرة'),
+        product('p3', 'فحم طبيعي', { category_id: 'c2' }),
+      ],
+      variants: [
+        variant('v1', 'p1', { color: 'أسود', price: 9000, stock_qty: 10 }),
+        variant('v2', 'p1', { color: 'فضي', price: 8000, stock_qty: 0 }),
+        variant('v3', 'p2', { color: 'أسود', price: 3000, stock_qty: 1, min_stock: 5 }),
+        variant('v4', 'p3', { size: '25', price: 2000, stock_qty: 40 }),
+        variant('v5', 'p3', { size: '10', price: 1000, stock_qty: 40 }),
+      ],
+      synonyms: [{ id: 'g', terms: ['ارجيله', 'شيشه'], is_active: true, change_seq: 1 }],
+    })
+  const ordered = (f: Parameters<typeof buildProductList>[1]) =>
+    buildProductList(rich(), f).map((p) => p.id)
+  const ids = (f: Parameters<typeof buildProductList>[1]) => ordered(f).sort()
+
+  it('finds through a synonym and points out the variants the words picked', () => {
+    expect(ids({ q: 'شيشة' })).toEqual(['p1', 'p2'])
+    const found = buildProductList(rich(), { q: 'ارجيله اسود' })
+    // The big one also comes in silver; the small one only in black, so nothing to point out.
+    expect(found.find((p) => p.id === 'p1')?.matched_variants).toEqual([
+      { id: 'v1', label: 'أسود' },
+    ])
+    expect(found.find((p) => p.id === 'p2')?.matched_variants).toEqual([])
+  })
+
+  it('does not point anything out when the words are in the product itself', () => {
+    expect(buildProductList(rich(), { q: 'ارجيله' })[0]?.matched_variants).toEqual([])
+  })
+
+  it('colour, size, availability and price filters combine and need one variant that fits all', () => {
+    expect(ids({ color: 'أسود' })).toEqual(['p1', 'p2'])
+    expect(ids({ color: 'أسود', availability: 'low' })).toEqual(['p2'])
+    expect(ids({ size: '25' })).toEqual(['p3'])
+    expect(ids({ availability: 'out' })).toEqual(['p1'])
+    expect(ids({ priceMin: 8500 })).toEqual(['p1'])
+    expect(ids({ priceMax: 2500 })).toEqual(['p3'])
+    // The black one costs 9000 and the cheap one is silver-less: no single variant is both.
+    expect(ids({ color: 'فضي', priceMin: 8500 })).toEqual([])
+    expect(ids({ q: 'ارجيله', color: 'أسود', categoryId: 'c1' })).toEqual(['p1', 'p2'])
+  })
+
+  it('sorts by name, price, newest and best-selling', () => {
+    expect(ordered({ sort: 'name' })).toEqual(['p2', 'p1', 'p3'])
+    expect(ordered({ sort: 'price_low' })).toEqual(['p3', 'p2', 'p1'])
+    expect(ordered({ sort: 'price_high' })).toEqual(['p1', 'p2', 'p3'])
+    expect(ordered({ sort: 'newest' })).toEqual(['p3', 'p2', 'p1'])
+    expect(
+      ordered({
+        sort: 'bestselling',
+        sold: new Map([
+          ['p2', 7],
+          ['p3', 2],
+        ]),
+      }),
+    ).toEqual(['p2', 'p3', 'p1'])
+  })
+
+  it('offers the colours and sizes that exist on active variants of active products', () => {
+    const s = rich()
+    s.variants.push(variant('v6', 'p1', { color: 'أحمر', is_active: false }))
+    expect(buildFacets(s)).toEqual({ colors: ['أسود', 'فضي'], sizes: ['10', '25'] })
+  })
+
+  it('the stock picker finds the variant, not only the product', () => {
+    expect(buildVariantList(rich(), 'فحم 25').map((v) => v.id)).toEqual(['v4'])
   })
 })
 

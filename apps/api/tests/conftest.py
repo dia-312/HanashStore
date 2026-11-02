@@ -76,7 +76,7 @@ def _clean_tables(_migrated_database: None) -> None:
                 "TRUNCATE audit_log, processed_commands, return_lines, returns, payments,"
                 " invoice_lines, invoices,"
                 " customers, stock_movements, product_images, product_variants, products,"
-                " categories, sessions, devices, users, settings"
+                " categories, synonym_groups, sessions, devices, users, settings"
             )
         )
         conn.execute(text("UPDATE sync_clock SET last_seq = 0"))

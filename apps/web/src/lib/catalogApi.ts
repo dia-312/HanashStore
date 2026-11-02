@@ -25,6 +25,8 @@ export interface ProductListItem {
   stock_total: number
   low_count: number
   out_count: number
+  /** On the device: the variants the search or filters picked, when they picked only some. */
+  matched_variants?: { id: string; label: string }[]
 }
 
 export interface Variant {
@@ -128,7 +130,16 @@ const query = (params: Record<string, string | number | boolean | null | undefin
   return text ? `?${text}` : ''
 }
 
+export interface SynonymGroup {
+  id: string
+  terms: string[]
+}
+
 export const catalogApi = {
+  synonyms: () => api<SynonymGroup[]>('/synonyms'),
+  saveSynonyms: (groups: { id?: string; terms: string[] }[]) =>
+    api<SynonymGroup[]>('/synonyms', { method: 'PUT', body: { groups } }),
+
   categories: (includeInactive = false) =>
     api<Category[]>(`/categories${query({ include_inactive: includeInactive })}`),
   createCategory: (name: string) =>

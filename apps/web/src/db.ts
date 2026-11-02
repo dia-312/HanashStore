@@ -14,6 +14,14 @@ export interface DbCategory {
   change_seq: number
 }
 
+/** Words that mean the same thing when searching (SPEC section 9); terms arrive normalized. */
+export interface DbSynonymGroup {
+  id: string
+  terms: string[]
+  is_active: boolean
+  change_seq: number
+}
+
 export interface DbProduct {
   id: string
   category_id: string
@@ -172,6 +180,7 @@ export interface OutboxRow {
 export type SalesDb = Dexie & {
   meta: EntityTable<MetaRow, 'key'>
   categories: EntityTable<DbCategory, 'id'>
+  synonym_groups: EntityTable<DbSynonymGroup, 'id'>
   products: EntityTable<DbProduct, 'id'>
   variants: EntityTable<DbVariant, 'id'>
   images: EntityTable<DbImage, 'id'>
@@ -234,6 +243,25 @@ db.version(4).stores({
 db.version(5).stores({
   meta: 'key',
   categories: 'id',
+  products: 'id, category_id',
+  variants: 'id, product_id',
+  images: 'id, product_id',
+  outbox: '++seq, &id, status',
+  customers: 'id',
+  invoices: 'id, customer_id, status, issued_at',
+  invoice_lines: 'id, invoice_id',
+  payments: 'id, customer_id, invoice_id',
+  returns: 'id, customer_id, invoice_id',
+  return_lines: 'id, return_id, invoice_line_id',
+  carts: 'id',
+  settings: 'key',
+})
+
+// Version 6 (M8): the synonym groups for search. Nothing already stored is touched.
+db.version(6).stores({
+  meta: 'key',
+  categories: 'id',
+  synonym_groups: 'id',
   products: 'id, category_id',
   variants: 'id, product_id',
   images: 'id, product_id',
