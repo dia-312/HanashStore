@@ -1,6 +1,6 @@
 # M9a — Dashboard, reports and the home screen: notes
 
-Branch `m8b-dashboard-reports` (from `main` after PR 11). **Status: built and checked on the PC (unit, screen, API and WebKit tests). Waiting for the user's check on the real iPad.**
+Branch `m8b-dashboard-reports` (from `main` after PR 11). **Status: built, checked on the PC (unit, screen and API tests) and tried on the real iPad by the user.**
 This is the dashboard-and-reports half of SPEC milestone M9; backups, export and the production deploy stay in M9b.
 Done when (SPEC F12): the numbers of the day on the home screen, and the reports with a date range, agree with the books. Two tests prove it: the server's reports against a reference written from the rows (random histories), and a browser journey that compares the home screen (read on the device) with the server's reports.
 
