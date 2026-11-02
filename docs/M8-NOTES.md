@@ -1,6 +1,6 @@
 # M8 — Search and full presentation mode: notes
 
-Branch `m8-search-presentation` (from `main` after PR 9). **Status: built and checked on the PC (unit, screen and WebKit tests). Waiting for the user's check on the real iPad.**
+Branch `m8-search-presentation` (from `main` after PR 9). **Status: built, checked on the PC (unit, screen and WebKit tests) and tried on the real iPad by the user (after the presentation-mode change below).**
 Done when (SPEC section 15): all section 9 test cases pass, and nothing from the "never shown" list is reachable in presentation mode. Both are tests now (see below).
 
 ## What exists
