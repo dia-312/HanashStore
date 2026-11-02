@@ -489,6 +489,9 @@ export const ar = {
     pictures: 'الصور',
     pictureN: 'الصورة {n}',
     chosen: 'الصنف المختار',
+    pickColor: 'اختر اللون',
+    pickSize: 'اختر المقاس',
+    pickBoth: 'اختر اللون والمقاس',
   },
   checkout: {
     title: 'إتمام البيع',

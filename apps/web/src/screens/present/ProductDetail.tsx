@@ -177,27 +177,49 @@ export function ProductDetail({
     () => [...new Set(variants.map((v) => v.size).filter((z): z is string => !!z))],
     [variants],
   )
-  // The variant a search picked, else the first one that can be bought, else the first.
-  const [chosenId, setChosenId] = useState<string>(
-    () =>
-      product.matched[0] ??
-      variants.find((v) => v.availability !== 'unavailable')?.id ??
-      variants[0]?.id ??
-      '',
+  // Colour and size are two choices the customer makes himself: nothing is picked for him. The
+  // exceptions are a dimension with one option only (nothing to choose) and a search that already
+  // picked a variant.
+  const first = product.matched[0] ? variants.find((v) => v.id === product.matched[0]) : undefined
+  const [color, setColor] = useState<string | null>(
+    () => first?.color ?? (colors.length === 1 ? (colors[0] ?? null) : null),
   )
-  const chosen: PresentVariant | undefined = variants.find((v) => v.id === chosenId) ?? variants[0]
+  const [size, setSize] = useState<string | null>(
+    () => first?.size ?? (sizes.length === 1 ? (sizes[0] ?? null) : null),
+  )
+  const colorDone = colors.length === 0 || color !== null
+  const sizeDone = sizes.length === 0 || size !== null
+  const fits = (v: PresentVariant) =>
+    (colors.length === 0 || color === null || v.color === color) &&
+    (sizes.length === 0 || size === null || v.size === size)
+  const chosen: PresentVariant | undefined = colorDone && sizeDone ? variants.find(fits) : undefined
 
-  // A colour picks the variant with that colour, keeping the size when that combination exists.
-  const pick = (change: { color?: string | null; size?: string | null }) => {
-    const color = change.color !== undefined ? change.color : (chosen?.color ?? null)
-    const size = change.size !== undefined ? change.size : (chosen?.size ?? null)
-    const next =
-      variants.find((v) => v.color === color && v.size === size) ??
-      variants.find((v) => (change.color !== undefined ? v.color === color : v.size === size))
-    if (next) setChosenId(next.id)
+  // Picking a colour that does not come in the size already chosen drops that size: he picks again.
+  const pickColor = (next: string) => {
+    setColor(next)
+    if (size !== null && !variants.some((v) => v.color === next && v.size === size)) {
+      setSize(sizes.length === 1 ? (sizes[0] ?? null) : null)
+    }
+  }
+  const pickSize = (next: string) => {
+    setSize(next)
+    if (color !== null && !variants.some((v) => v.size === next && v.color === color)) {
+      setColor(colors.length === 1 ? (colors[0] ?? null) : null)
+    }
   }
 
-  const picture = chosen?.image?.id ?? null
+  // The picture follows the variant; with only a colour picked, the first picture of that colour.
+  const picture =
+    chosen?.image?.id ??
+    variants.find((v) => color !== null && v.color === color && v.image)?.image?.id ??
+    null
+  const candidates = variants.filter(fits)
+  const prompt =
+    !colorDone && !sizeDone
+      ? ar.present.pickBoth
+      : !colorDone
+        ? ar.present.pickColor
+        : ar.present.pickSize
   const qty = chosen ? inCart(chosen.id) : 0
 
   return (
@@ -210,16 +232,16 @@ export function ProductDetail({
           <div role="group" aria-label={ar.present.color} className="grid gap-1">
             <span className="font-bold">{ar.present.color}</span>
             <div className="flex flex-wrap gap-2">
-              {colors.map((color) => (
+              {colors.map((option) => (
                 <button
-                  key={color}
+                  key={option}
                   type="button"
-                  aria-pressed={chosen?.color === color}
-                  onClick={() => pick({ color })}
-                  className={choice(chosen?.color === color)}
+                  aria-pressed={color === option}
+                  onClick={() => pickColor(option)}
+                  className={choice(color === option)}
                 >
-                  {chosen?.color === color && <span aria-hidden="true">✓ </span>}
-                  {color}
+                  {color === option && <span aria-hidden="true">✓ </span>}
+                  {option}
                 </button>
               ))}
             </div>
@@ -229,50 +251,67 @@ export function ProductDetail({
           <div role="group" aria-label={ar.present.size} className="grid gap-1">
             <span className="font-bold">{ar.present.size}</span>
             <div className="flex flex-wrap gap-2">
-              {sizes.map((size) => (
+              {sizes.map((option) => (
                 <button
-                  key={size}
+                  key={option}
                   type="button"
-                  aria-pressed={chosen?.size === size}
-                  onClick={() => pick({ size })}
-                  className={choice(chosen?.size === size)}
+                  aria-pressed={size === option}
+                  onClick={() => pickSize(option)}
+                  className={choice(size === option)}
                 >
-                  {chosen?.size === size && <span aria-hidden="true">✓ </span>}
-                  <bdi>{size}</bdi>
+                  {size === option && <span aria-hidden="true">✓ </span>}
+                  <bdi>{option}</bdi>
                 </button>
               ))}
             </div>
           </div>
         )}
-        {chosen && (
-          <section
-            aria-label={ar.present.chosen}
-            className="grid gap-2 rounded-xl bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center"
-          >
+        <section
+          aria-label={ar.present.chosen}
+          className="grid gap-2 rounded-xl bg-white p-3 sm:grid-cols-[1fr_auto] sm:items-center"
+        >
+          {chosen ? (
+            <>
+              <span>
+                <bdi className="block text-xl font-bold">{formatMoney(chosen.price)}</bdi>
+                <Badge availability={chosen.availability} />
+              </span>
+              {qty === 0 ? (
+                <button
+                  type="button"
+                  disabled={chosen.available < 1}
+                  onClick={() => onChange(chosen.id, 1, chosen.available)}
+                  className="min-h-14 rounded-xl bg-navy px-8 text-lg font-bold text-white disabled:opacity-40"
+                >
+                  {ar.present.add}
+                </button>
+              ) : (
+                <Stepper
+                  value={qty}
+                  max={chosen.available}
+                  label={fill(ar.present.inCart, { n: qty })}
+                  onChange={(n) => onChange(chosen.id, n, chosen.available)}
+                />
+              )}
+            </>
+          ) : (
             <span>
-              <bdi className="block text-xl font-bold">{formatMoney(chosen.price)}</bdi>
-              <Badge availability={chosen.availability} />
+              <bdi className="block text-xl font-bold">{range(candidates.map((v) => v.price))}</bdi>
+              <span className="font-bold">
+                <span aria-hidden="true">☝ </span>
+                {prompt}
+              </span>
             </span>
-            {qty === 0 ? (
-              <button
-                type="button"
-                disabled={chosen.available < 1}
-                onClick={() => onChange(chosen.id, 1, chosen.available)}
-                className="min-h-14 rounded-xl bg-navy px-8 text-lg font-bold text-white disabled:opacity-40"
-              >
-                {ar.present.add}
-              </button>
-            ) : (
-              <Stepper
-                value={qty}
-                max={chosen.available}
-                label={fill(ar.present.inCart, { n: qty })}
-                onChange={(n) => onChange(chosen.id, n, chosen.available)}
-              />
-            )}
-          </section>
-        )}
+          )}
+        </section>
       </div>
     </div>
   )
 }
+
+const range = (prices: number[]) =>
+  prices.length === 0
+    ? ''
+    : Math.min(...prices) === Math.max(...prices)
+      ? formatMoney(prices[0] ?? 0)
+      : `${formatMoney(Math.min(...prices))} – ${formatMoney(Math.max(...prices))}`
