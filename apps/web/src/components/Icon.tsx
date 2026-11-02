@@ -21,6 +21,8 @@ const PATHS = {
   info: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 16v-4M12 8h.01',
   tablet: 'M6 2h12a2 2 0 0 1 2 2v16a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2zM12 18h.01',
   code: 'M16 18l6-6-6-6M8 6l-6 6 6 6',
+  chat: 'M21 12a8 8 0 0 1-11.9 7L3 21l2-5.5A8 8 0 1 1 21 12z',
+  mail: 'M4 5h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1zM3 7l9 6 9-6',
   // Points to the left: the way forward in a right-to-left page.
   forward: 'M15 18l-6-6 6-6',
 } as const

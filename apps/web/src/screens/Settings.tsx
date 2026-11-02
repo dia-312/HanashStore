@@ -297,17 +297,22 @@ export default function Settings() {
                 </span>
               </span>
             </div>
-            <div className="flex items-center gap-3">
+            <Link
+              to="/settings/developer"
+              className="-mx-2 flex min-h-16 items-center gap-3 rounded-xl px-2 outline-accent focus-visible:outline-4 active:bg-cream/10"
+            >
               <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-cream/15">
                 <Icon name="code" />
               </span>
-              <span>
+              <span className="min-w-0 flex-1">
                 <span className="block text-sm opacity-80">{ar.settings.developedBy}</span>
-                <span className="block text-lg font-bold leading-snug">
+                <span className="block text-lg font-bold leading-snug underline underline-offset-4">
                   {DEVELOPER.ar} <bdi dir="ltr">· {DEVELOPER.en}</bdi>
                 </span>
+                <span className="block text-sm opacity-80">{ar.settings.developerHint}</span>
               </span>
-            </div>
+              <Icon name="forward" className="size-5 shrink-0 opacity-60" />
+            </Link>
             <p className="border-t border-cream/20 pt-3 text-sm leading-relaxed">
               © <bdi>{COPYRIGHT_YEAR}</bdi> {DEVELOPER.ar}. {ar.settings.rights}
             </p>

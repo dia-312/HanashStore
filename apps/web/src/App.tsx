@@ -27,6 +27,7 @@ const Stock = lazy(() => import('./screens/stock/Stock'))
 const Categories = lazy(() => import('./screens/settings/Categories'))
 const Synonyms = lazy(() => import('./screens/settings/Synonyms'))
 const ExportData = lazy(() => import('./screens/settings/ExportData'))
+const DeveloperPage = lazy(() => import('./screens/settings/Developer'))
 const ImportProducts = lazy(() => import('./screens/settings/ImportProducts'))
 const SyncScreen = lazy(() => import('./screens/Sync'))
 const Statement = lazy(() => import('./screens/customers/Statement'))
@@ -101,6 +102,7 @@ export function App() {
               <Route path="settings/categories" element={lazyPage(<Categories />)} />
               <Route path="settings/synonyms" element={lazyPage(<Synonyms />)} />
               <Route path="settings/export" element={lazyPage(<ExportData />)} />
+              <Route path="settings/developer" element={lazyPage(<DeveloperPage />)} />
               <Route path="settings/import" element={lazyPage(<ImportProducts />)} />
               <Route path="*" element={<EmptyPage {...ar.empty.home} />} />
             </Route>

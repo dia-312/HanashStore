@@ -169,6 +169,14 @@ describe('about and the developer', () => {
     expect(about.textContent).toContain(`${ar.settings.version} ${pkg.version}`)
   })
 
+  it('tapping the developer name opens the developer page', () => {
+    renderSettings()
+    const link = within(group(ar.settings.about)).getByRole('link', {
+      name: new RegExp(DEVELOPER.ar),
+    })
+    expect(link.getAttribute('href')).toBe('/settings/developer')
+  })
+
   it('the developer is Diaa Arar, and the year is the year of the first version', () => {
     expect(DEVELOPER).toEqual({ ar: 'ضياء عرار', en: 'Diaa Arar' })
     expect(COPYRIGHT_YEAR).toBe(2026)
