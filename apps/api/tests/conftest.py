@@ -1,6 +1,7 @@
 import os
 import tempfile
 from collections.abc import Iterator
+from datetime import timedelta
 from pathlib import Path
 
 import pytest
@@ -39,6 +40,7 @@ from app.cli import create_user  # noqa: E402
 from app.db import get_engine  # noqa: E402
 from app.main import app  # noqa: E402
 from app.ratelimit import LoginLimiter  # noqa: E402
+from app.services import sync as sync_service  # noqa: E402
 
 PASSWORD = "correct horse battery"
 
@@ -66,6 +68,13 @@ def _migrated_database() -> Iterator[None]:
     cfg.set_main_option("script_location", str(API_DIR / "alembic"))
     command.upgrade(cfg, "head")
     yield
+
+
+@pytest.fixture(autouse=True)
+def _dates_are_not_the_point(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Most tests use fixed dates in the week they were written; the rule that refuses a date in
+    the future (tests/test_dates.py) is switched on again by the tests that are about it."""
+    monkeypatch.setattr(sync_service, "FUTURE_TOLERANCE", timedelta(days=3650))
 
 
 @pytest.fixture(autouse=True)

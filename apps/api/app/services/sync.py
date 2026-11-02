@@ -11,7 +11,7 @@ id, so the same id sent again returns the stored result and changes nothing.
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from pydantic import ValidationError
@@ -347,6 +347,43 @@ HANDLERS: dict[str, Handler] = {
 }
 
 
+# The dates a command carries come from the device clock (SPEC section 7). A clock that is a
+# little off is tolerated; one that is plainly wrong would put the document in the wrong month of
+# every statement and report, so the command is refused and the rep sees why.
+DATE_FIELDS = ("issued_at", "paid_at", "refunded_at", "delivered_at", "cancelled_at", "voided_at")
+DEFAULT_FUTURE_TOLERANCE = timedelta(days=1)
+FUTURE_TOLERANCE = DEFAULT_FUTURE_TOLERANCE  # tests move it: most of them use fixed dates
+EARLIEST = datetime(2020, 1, 1, tzinfo=UTC)
+
+
+def _check_dates(payload: dict[str, Any]) -> None:
+    now = clock.utcnow()
+    for name in DATE_FIELDS:
+        raw = payload.get(name)
+        if not isinstance(raw, str):
+            continue  # missing, or not a text: the payload check answers for it
+        try:
+            moment = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if moment.tzinfo is None:
+            moment = moment.replace(tzinfo=UTC)
+        if moment > now + FUTURE_TOLERANCE:
+            raise ApiError(
+                422,
+                "DATE_IN_FUTURE",
+                "The date is in the future: the clock of the device is wrong",
+                {"field": name, "value": raw},
+            )
+        if moment < EARLIEST:
+            raise ApiError(
+                422,
+                "DATE_TOO_OLD",
+                "The date is before 2020: the clock of the device is wrong",
+                {"field": name, "value": raw},
+            )
+
+
 def _has_nul(node: Any) -> bool:
     """A NUL character cannot be stored in Postgres text or JSON, and a command that carries one
     must be refused cleanly: if it crashed the request, the device would resend it for ever."""
@@ -418,6 +455,7 @@ def process_command(db: Session, device: Device, cmd: CommandIn) -> dict[str, An
                 "VALIDATION_ERROR",
                 "Text contains a character that cannot be stored",
             )
+        _check_dates(cmd.payload)
         handler = HANDLERS.get(cmd.type)
         if handler is None:
             raise ApiError(422, "UNKNOWN_COMMAND", "Unknown command type", {"type": cmd.type})

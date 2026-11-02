@@ -2,6 +2,7 @@ import { useEffect } from 'react'
 import { Link, NavLink, Outlet, useLocation } from 'react-router'
 import { ar, fill } from '../i18n/ar'
 import { isCatalogPath, resetCatalogFilters } from '../lib/catalogFilters'
+import { useClockWrong } from '../lib/clockGuard'
 import { type SyncStatus } from '../lib/sync/engine'
 import { useSyncStatus } from '../lib/sync/useSyncStatus'
 import { useUpdate } from '../lib/update'
@@ -66,7 +67,8 @@ function SyncChip() {
 }
 
 export function Shell() {
-  const { lock, sessionExpired, clockOff } = useAuth()
+  const { lock, sessionExpired, clockOff: clockOffAtSignIn } = useAuth()
+  const clockOff = useClockWrong() || clockOffAtSignIn
   const { pendingTooLong } = useSyncStatus()
   const update = useUpdate()
   // The catalog's filters last while the rep is in the catalog (a product page included).

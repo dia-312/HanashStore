@@ -8,6 +8,7 @@ import {
 } from '../db'
 import { allocateDiscount, invoiceTotals, lineTotal, returnLineAmount } from './billing'
 import { clearCart } from './cart'
+import { clockLooksWrong } from './clockGuard'
 import { takeNumber } from './counters'
 import { hebronDay } from './date'
 import { loadSalesSnapshot, returnableLines, saleEffects } from './localSales'
@@ -50,12 +51,18 @@ export class SaleError extends Error {
       | 'INVOICE_CANCELLED'
       | 'HAS_RETURNS'
       | 'EMPTY_RETURN'
-      | 'BAD_RETURN_QTY',
+      | 'BAD_RETURN_QTY'
+      | 'CLOCK_OFF',
     readonly variantId?: string,
     readonly available?: number,
   ) {
     super(code)
   }
+}
+
+/** No dated document while the iPad's clock is plainly wrong (see `clockGuard`). */
+async function assertClock(): Promise<void> {
+  if (await clockLooksWrong()) throw new SaleError('CLOCK_OFF')
 }
 
 const clean = (text: string | null | undefined) => {
@@ -136,6 +143,7 @@ export interface SaleInput {
 export async function confirmSale(
   input: SaleInput,
 ): Promise<{ invoiceId: string; number: string }> {
+  await assertClock()
   if (input.customerId === null) throw new SaleError('NO_CUSTOMER')
   if (input.lines.length === 0) throw new SaleError('EMPTY_CART')
   if (!Number.isInteger(input.paid) || input.paid < 0) throw new SaleError('BAD_PAYMENT')
@@ -284,6 +292,7 @@ export async function confirmSale(
 }
 
 export async function markDelivered(invoiceId: string): Promise<void> {
+  await assertClock()
   const payload: MarkDeliveredPayload = {
     invoice_id: invoiceId,
     delivered_at: new Date().toISOString(),
@@ -299,6 +308,7 @@ export async function cancelInvoice(
   reason: string,
   voidPayment: boolean,
 ): Promise<void> {
+  await assertClock()
   const invoice = await db.invoices.get(invoiceId)
   if (!invoice) return
   // The server refuses it too: goods already taken back can't be cancelled away.
@@ -350,6 +360,7 @@ export interface PaymentInput {
 export async function recordPayment(
   input: PaymentInput,
 ): Promise<{ paymentId: string; number: string }> {
+  await assertClock()
   if (!Number.isInteger(input.amount) || input.amount <= 0) throw new SaleError('BAD_PAYMENT')
   if (input.method === 'cheque' && !clean(input.note)) throw new SaleError('CHEQUE_NOTE')
   const paymentId = uuid7()
@@ -405,6 +416,7 @@ export interface RefundInput {
 export async function recordRefund(
   input: RefundInput,
 ): Promise<{ refundId: string; number: string }> {
+  await assertClock()
   if (!Number.isInteger(input.amount) || input.amount <= 0) throw new SaleError('BAD_PAYMENT')
   if (input.method === 'cheque' && !clean(input.note)) throw new SaleError('CHEQUE_NOTE')
   const refundId = uuid7()
@@ -457,6 +469,7 @@ function paidAtFor(day: string | undefined): string {
 
 /** Voids a payment recorded by mistake: it stays on record, marked voided, with the reason. */
 export async function voidPayment(paymentId: string, reason: string): Promise<void> {
+  await assertClock()
   if (!clean(reason)) throw new SaleError('NO_REASON')
   const payment = await db.payments.get(paymentId)
   if (!payment) throw new SaleError('UNKNOWN_PAYMENT')
@@ -487,6 +500,7 @@ export interface ReturnInput {
 export async function createReturn(
   input: ReturnInput,
 ): Promise<{ returnId: string; number: string; total: number }> {
+  await assertClock()
   const returnId = uuid7()
   const issuedAt = new Date().toISOString()
   const result = await db.transaction(
