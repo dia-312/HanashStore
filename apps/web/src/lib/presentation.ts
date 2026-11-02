@@ -47,8 +47,6 @@ export interface PresentCategory {
 export interface PresentCatalog {
   categories: PresentCategory[]
   products: PresentProduct[]
-  /** The colours the customer can filter by (variants that can be shown). */
-  colors: string[]
 }
 
 const RANK: Record<Availability, number> = { available: 2, limited: 1, unavailable: 0 }
@@ -60,7 +58,7 @@ export function availabilityOf(qty: number, minStock: number): Availability {
 
 export function buildPresentCatalog(
   s: Snapshot,
-  options: { q?: string; color?: string; hideOutOfStock?: boolean } = {},
+  options: { q?: string; hideOutOfStock?: boolean } = {},
 ): PresentCatalog {
   const hideOut = options.hideOutOfStock ?? true
   const effective = pendingStock(new Map(s.variants.map((v) => [v.id, v.stock_qty])), s.pending)
@@ -76,7 +74,6 @@ export function buildPresentCatalog(
 
   const query = options.q?.trim() ?? ''
   const hits = query ? new Map(searchHits(s, query).map((h) => [h.productId, h])) : null
-  const colors = new Set<string>()
   const products: PresentProduct[] = []
   for (const p of s.products) {
     if (!p.is_active || !activeCategories.has(p.category_id)) continue
@@ -99,8 +96,6 @@ export function buildPresentCatalog(
         }
       })
       .filter((v) => !hideOut || v.availability !== 'unavailable')
-    for (const v of variants) if (v.color) colors.add(v.color)
-    if (options.color !== undefined && !variants.some((v) => v.color === options.color)) continue
     if (variants.length === 0) continue
     const best = variants.reduce<Availability>(
       (acc, v) => (RANK[v.availability] > RANK[acc] ? v.availability : acc),
@@ -146,5 +141,5 @@ export function buildPresentCatalog(
       count: inCategory.length,
     })
   }
-  return { categories, products, colors: [...colors].sort(collator.compare) }
+  return { categories, products }
 }

@@ -4,8 +4,8 @@ import { ar, fill } from '../../i18n/ar'
 import { formatMoney } from '../../lib/money'
 import type { Availability, PresentProduct, PresentVariant } from '../../lib/presentation'
 
-// A product in presentation mode: pictures that swipe, colour and size buttons that pick the
-// variant (and show its picture), and one card for the chosen variant with price, availability
+// A product in presentation mode: pictures that swipe, size buttons that pick the variant (and
+// show its picture; the colour is not a step), and one card for the chosen variant with price, availability
 // badge and the add button / quantity stepper. The shelf quantity is never shown.
 
 const big = 'min-h-14 min-w-14 rounded-xl border-2 border-navy/30 bg-white text-2xl font-bold'
@@ -159,6 +159,21 @@ function Gallery({
   )
 }
 
+/** What the customer taps to pick a variant: its size. The colour is not a step of its own; it is
+ * only added to the label when two variants share a size (or there is no size), so they can still
+ * be told apart. */
+function optionLabels(variants: PresentVariant[]): Map<string, string> {
+  const base = (v: PresentVariant) => v.size ?? v.color ?? '—'
+  const counts = new Map<string, number>()
+  for (const v of variants) counts.set(base(v), (counts.get(base(v)) ?? 0) + 1)
+  return new Map(
+    variants.map((v) => [
+      v.id,
+      (counts.get(base(v)) ?? 0) > 1 && v.size && v.color ? `${v.size} · ${v.color}` : base(v),
+    ]),
+  )
+}
+
 export function ProductDetail({
   product,
   inCart,
@@ -169,58 +184,22 @@ export function ProductDetail({
   onChange: (variantId: string, qty: number, max: number) => void
 }) {
   const { variants } = product
-  const colors = useMemo(
-    () => [...new Set(variants.map((v) => v.color).filter((c): c is string => !!c))],
-    [variants],
-  )
-  const sizes = useMemo(
-    () => [...new Set(variants.map((v) => v.size).filter((z): z is string => !!z))],
-    [variants],
-  )
-  // Colour and size are two choices the customer makes himself: nothing is picked for him. The
-  // exceptions are a dimension with one option only (nothing to choose) and a search that already
-  // picked a variant.
-  const first = product.matched[0] ? variants.find((v) => v.id === product.matched[0]) : undefined
-  const [color, setColor] = useState<string | null>(
-    () => first?.color ?? (colors.length === 1 ? (colors[0] ?? null) : null),
-  )
-  const [size, setSize] = useState<string | null>(
-    () => first?.size ?? (sizes.length === 1 ? (sizes[0] ?? null) : null),
-  )
-  const colorDone = colors.length === 0 || color !== null
-  const sizeDone = sizes.length === 0 || size !== null
-  const fits = (v: PresentVariant) =>
-    (colors.length === 0 || color === null || v.color === color) &&
-    (sizes.length === 0 || size === null || v.size === size)
-  const chosen: PresentVariant | undefined = colorDone && sizeDone ? variants.find(fits) : undefined
+  const labels = useMemo(() => optionLabels(variants), [variants])
+  const bySize = variants.some((v) => v.size)
 
-  // Picking a colour that does not come in the size already chosen drops that size: he picks again.
-  const pickColor = (next: string) => {
-    setColor(next)
-    if (size !== null && !variants.some((v) => v.color === next && v.size === size)) {
-      setSize(sizes.length === 1 ? (sizes[0] ?? null) : null)
-    }
-  }
-  const pickSize = (next: string) => {
-    setSize(next)
-    if (color !== null && !variants.some((v) => v.size === next && v.color === color)) {
-      setColor(colors.length === 1 ? (colors[0] ?? null) : null)
-    }
-  }
-
-  // The picture follows the variant; with only a colour picked, the first picture of that colour.
-  const picture =
-    chosen?.image?.id ??
-    variants.find((v) => color !== null && v.color === color && v.image)?.image?.id ??
-    null
-  const candidates = variants.filter(fits)
-  const prompt =
-    !colorDone && !sizeDone
-      ? ar.present.pickBoth
-      : !colorDone
-        ? ar.present.pickColor
-        : ar.present.pickSize
+  // Nothing is picked for the customer, unless there is nothing to pick from (one variant) or a
+  // search already picked one.
+  const [chosenId, setChosenId] = useState<string | null>(
+    () => product.matched[0] ?? (variants.length === 1 ? (variants[0]?.id ?? null) : null),
+  )
+  const chosen: PresentVariant | undefined = variants.find((v) => v.id === chosenId)
+  const picture = chosen?.image?.id ?? null
   const qty = chosen ? inCart(chosen.id) : 0
+  const prices = variants.map((v) => v.price)
+  const range =
+    Math.min(...prices) === Math.max(...prices)
+      ? formatMoney(prices[0] ?? 0)
+      : `${formatMoney(Math.min(...prices))} – ${formatMoney(Math.max(...prices))}`
 
   return (
     <div className="grid gap-4 md:grid-cols-2">
@@ -228,39 +207,24 @@ export function ProductDetail({
       <div className="grid content-start gap-3">
         <h2 className="text-2xl font-bold">{product.name}</h2>
         {product.description && <p>{product.description}</p>}
-        {colors.length > 0 && (
-          <div role="group" aria-label={ar.present.color} className="grid gap-1">
-            <span className="font-bold">{ar.present.color}</span>
+        {variants.length > 1 && (
+          <div
+            role="group"
+            aria-label={bySize ? ar.present.size : ar.present.option}
+            className="grid gap-1"
+          >
+            <span className="font-bold">{bySize ? ar.present.size : ar.present.option}</span>
             <div className="flex flex-wrap gap-2">
-              {colors.map((option) => (
+              {variants.map((v) => (
                 <button
-                  key={option}
+                  key={v.id}
                   type="button"
-                  aria-pressed={color === option}
-                  onClick={() => pickColor(option)}
-                  className={choice(color === option)}
+                  aria-pressed={chosenId === v.id}
+                  onClick={() => setChosenId(v.id)}
+                  className={choice(chosenId === v.id)}
                 >
-                  {color === option && <span aria-hidden="true">✓ </span>}
-                  {option}
-                </button>
-              ))}
-            </div>
-          </div>
-        )}
-        {sizes.length > 0 && (
-          <div role="group" aria-label={ar.present.size} className="grid gap-1">
-            <span className="font-bold">{ar.present.size}</span>
-            <div className="flex flex-wrap gap-2">
-              {sizes.map((option) => (
-                <button
-                  key={option}
-                  type="button"
-                  aria-pressed={size === option}
-                  onClick={() => pickSize(option)}
-                  className={choice(size === option)}
-                >
-                  {size === option && <span aria-hidden="true">✓ </span>}
-                  <bdi>{option}</bdi>
+                  {chosenId === v.id && <span aria-hidden="true">✓ </span>}
+                  <bdi>{labels.get(v.id)}</bdi>
                 </button>
               ))}
             </div>
@@ -296,10 +260,10 @@ export function ProductDetail({
             </>
           ) : (
             <span>
-              <bdi className="block text-xl font-bold">{range(candidates.map((v) => v.price))}</bdi>
+              <bdi className="block text-xl font-bold">{range}</bdi>
               <span className="font-bold">
                 <span aria-hidden="true">☝ </span>
-                {prompt}
+                {bySize ? ar.present.pickSize : ar.present.pickOption}
               </span>
             </span>
           )}
@@ -308,10 +272,3 @@ export function ProductDetail({
     </div>
   )
 }
-
-const range = (prices: number[]) =>
-  prices.length === 0
-    ? ''
-    : Math.min(...prices) === Math.max(...prices)
-      ? formatMoney(prices[0] ?? 0)
-      : `${formatMoney(Math.min(...prices))} – ${formatMoney(Math.max(...prices))}`

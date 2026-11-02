@@ -109,12 +109,14 @@ afterEach(() => {
   vi.unstubAllGlobals()
 })
 
-// The chosen-variant card, and picking a colour the way the customer does.
+// The chosen-variant card, and picking a variant the way the customer does: by its size, or by its
+// name when the product has no sizes. There is no colour step.
 const card = () => screen.getByRole('region', { name: ar.present.chosen })
-const chooseColor = (name: string) =>
-  fireEvent.click(
-    within(screen.getByRole('group', { name: ar.present.color })).getByRole('button', { name }),
-  )
+const options = () =>
+  screen.queryByRole('group', { name: ar.present.size }) ??
+  screen.getByRole('group', { name: ar.present.option })
+const choose = (name: string | RegExp) =>
+  fireEvent.click(within(options()).getByRole('button', { name }))
 
 const openProduct = async () => {
   fireEvent.click(await screen.findByRole('button', { name: new RegExp(ar.present.all) }))
@@ -136,9 +138,9 @@ describe('presentation mode (customer-safe)', () => {
   it('shows availability as a badge and never the quantity on the shelf', async () => {
     renderPresent()
     await openProduct()
-    chooseColor('أسود')
+    choose('أسود')
     expect(within(card()).getByText(ar.present.available)).toBeTruthy() // the black one, 37
-    chooseColor('أحمر')
+    choose('أحمر')
     expect(within(card()).getByText(ar.present.limited)).toBeTruthy() // 3 on the shelf, alert level 3
     const text = document.body.textContent ?? ''
     expect(text).not.toMatch(/\b37\b/)
@@ -154,7 +156,7 @@ describe('presentation mode (customer-safe)', () => {
   it('adds to the cart, changes the quantity, and the stepper stops at what is on the shelf', async () => {
     renderPresent()
     await openProduct()
-    chooseColor('أحمر')
+    choose('أحمر')
     fireEvent.click(within(card()).getByRole('button', { name: ar.present.add }))
     await waitFor(async () =>
       expect((await getCart('c-1'))?.lines).toEqual([{ variant_id: 'v2', qty: 1 }]),
@@ -174,7 +176,7 @@ describe('presentation mode (customer-safe)', () => {
   it('shows the cart with the total before any discount', async () => {
     renderPresent()
     await openProduct()
-    chooseColor('أسود')
+    choose('أسود')
     fireEvent.click(within(card()).getByRole('button', { name: ar.present.add })) // black is first
     await waitFor(async () => expect(await getCart('c-1')).toBeDefined())
     fireEvent.click(screen.getByRole('button', { name: new RegExp(ar.present.cart) }))
@@ -186,7 +188,7 @@ describe('presentation mode (customer-safe)', () => {
   it('"خلصت" needs the PIN: a wrong one is refused, the right one goes to checkout', async () => {
     renderPresent()
     await openProduct()
-    chooseColor('أسود')
+    choose('أسود')
     fireEvent.click(within(card()).getByRole('button', { name: ar.present.add }))
     await waitFor(async () => expect(await getCart('c-1')).toBeDefined())
     fireEvent.click(screen.getByRole('button', { name: new RegExp(ar.present.cart) }))
@@ -248,7 +250,7 @@ describe('the out-of-stock switch from Settings', () => {
   })
 })
 
-describe('search, colour filter and variants in presentation mode', () => {
+describe('search and variants in presentation mode', () => {
   const addCoal = async () => {
     await db.products.put({
       id: 'p2',
@@ -289,20 +291,18 @@ describe('search, colour filter and variants in presentation mode', () => {
     expect(screen.getByRole('button', { name: /أحمر/ }).getAttribute('aria-pressed')).toBe('true')
   })
 
-  it('the colour chips narrow the products', async () => {
+  it('has no colour step: no colour buttons and no colour filter anywhere', async () => {
     await addCoal()
     renderPresent()
     fireEvent.click(await screen.findByRole('button', { name: new RegExp(ar.present.all) }))
     expect(await screen.findByRole('button', { name: /فحم طبيعي/ })).toBeTruthy()
-    const chips = within(screen.getByRole('group', { name: ar.present.color }))
-    fireEvent.click(chips.getByRole('button', { name: 'أحمر' }))
-    await waitFor(() => expect(screen.queryByRole('button', { name: /فحم طبيعي/ })).toBeNull())
-    expect(screen.getByRole('button', { name: /أرجيلة كبيرة/ })).toBeTruthy()
-    fireEvent.click(chips.getByRole('button', { name: ar.present.allColors }))
-    expect(await screen.findByRole('button', { name: /فحم طبيعي/ })).toBeTruthy()
+    expect(screen.queryByRole('group', { name: 'اللون' })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: /أرجيلة كبيرة/ }))
+    await screen.findByText('أرجيلة فاخرة')
+    expect(screen.queryByRole('group', { name: 'اللون' })).toBeNull()
   })
 
-  it('choosing a colour brings up its picture in the gallery', async () => {
+  it('choosing a variant brings up its picture in the gallery', async () => {
     const scrollTo = vi.fn()
     Element.prototype.scrollIntoView = scrollTo
     await db.images.bulkPut([
@@ -332,7 +332,7 @@ describe('search, colour filter and variants in presentation mode', () => {
     const pictures = within(screen.getByRole('group', { name: 'أرجيلة كبيرة' }))
     expect(pictures.getAllByRole('img')).toHaveLength(2) // the product's and the red one's
     scrollTo.mockClear()
-    chooseColor('أحمر')
+    choose('أحمر')
     await waitFor(() => expect(scrollTo).toHaveBeenCalled())
     // the dots say which picture is in view and let the customer jump to one
     expect(screen.getByRole('button', { name: 'الصورة 2' })).toBeTruthy()
@@ -340,7 +340,30 @@ describe('search, colour filter and variants in presentation mode', () => {
     delete Element.prototype.scrollIntoView
   })
 
-  it('picks nothing for the customer: a colour alone does not choose a size', async () => {
+  it('picks nothing for the customer: a prompt and no add button until a size is chosen', async () => {
+    await db.variants.bulkPut([
+      variant('v1', { color: 'أسود', size: 'كبير', stock_qty: 37 }),
+      variant('v2', { color: 'أحمر', size: 'صغير', stock_qty: 3, min_stock: 3, price: 5000 }),
+      variant('v3', { color: 'ذهبي', stock_qty: 0 }),
+    ])
+    renderPresent()
+    await openProduct()
+    const sizes = within(screen.getByRole('group', { name: ar.present.size }))
+    expect(card().textContent).toContain(ar.present.pickSize)
+    expect(screen.queryByRole('button', { name: ar.present.add })).toBeNull()
+    expect(
+      sizes.getAllByRole('button').every((b) => b.getAttribute('aria-pressed') === 'false'),
+    ).toBe(true)
+    // the colour is not a step: the sizes are all there, whatever their colour
+    expect(sizes.getAllByRole('button')).toHaveLength(2)
+    fireEvent.click(sizes.getByRole('button', { name: /صغير/ }))
+    expect(within(card()).getByText(/50\.00/)).toBeTruthy()
+    expect(within(card()).getByRole('button', { name: ar.present.add })).toBeTruthy()
+    fireEvent.click(sizes.getByRole('button', { name: /كبير/ }))
+    expect(within(card()).getByText(/45\.00/)).toBeTruthy()
+  })
+
+  it('two variants of the same size are told apart by their colour, and only then', async () => {
     await db.variants.bulkPut([
       variant('v1', { color: 'أسود', size: 'كبير', stock_qty: 37 }),
       variant('v2', { color: 'أحمر', size: 'صغير', stock_qty: 3, min_stock: 3, price: 5000 }),
@@ -350,62 +373,31 @@ describe('search, colour filter and variants in presentation mode', () => {
     renderPresent()
     await openProduct()
     const sizes = within(screen.getByRole('group', { name: ar.present.size }))
-    // at first nothing is chosen: a prompt instead of the add button
-    expect(card().textContent).toContain(ar.present.pickBoth)
+    expect(sizes.getAllByRole('button').map((b) => b.textContent?.replace('✓ ', ''))).toEqual([
+      'كبير',
+      'صغير · أحمر',
+      'صغير · أسود',
+    ])
+    fireEvent.click(sizes.getByRole('button', { name: 'صغير · أسود' }))
+    expect(within(card()).getByText(/40\.00/)).toBeTruthy()
+  })
+
+  it('a product that comes in colours only is chosen by that name, with its own prompt', async () => {
+    renderPresent()
+    await openProduct()
+    expect(screen.queryByRole('group', { name: ar.present.size })).toBeNull()
+    expect(card().textContent).toContain(ar.present.pickOption)
     expect(screen.queryByRole('button', { name: ar.present.add })).toBeNull()
-    expect(
-      sizes.getAllByRole('button').every((b) => b.getAttribute('aria-pressed') === 'false'),
-    ).toBe(true)
-    // a colour: still no size, and still no add button
-    chooseColor('أسود')
-    expect(card().textContent).toContain(ar.present.pickSize)
-    expect(
-      sizes.getAllByRole('button').every((b) => b.getAttribute('aria-pressed') === 'false'),
-    ).toBe(true)
-    expect(screen.queryByRole('button', { name: ar.present.add })).toBeNull()
-    // changing the colour changes nothing about the size
-    chooseColor('أحمر')
-    expect(card().textContent).toContain(ar.present.pickSize)
-    // the customer picks the size and only then has a price and the add button
-    fireEvent.click(sizes.getByRole('button', { name: /صغير/ }))
-    expect(within(card()).getByText(/50\.00/)).toBeTruthy()
+    choose('أحمر')
     expect(within(card()).getByRole('button', { name: ar.present.add })).toBeTruthy()
   })
 
-  it('a colour that does not come in the chosen size drops the size instead of choosing another', async () => {
-    await db.variants.bulkPut([
-      variant('v1', { color: 'أسود', size: 'كبير', stock_qty: 37 }),
-      variant('v2', { color: 'أحمر', size: 'صغير', stock_qty: 3, min_stock: 3, price: 5000 }),
-      variant('v3', { color: 'ذهبي', stock_qty: 0 }),
-    ])
-    renderPresent()
-    await openProduct()
-    const sizes = within(screen.getByRole('group', { name: ar.present.size }))
-    fireEvent.click(sizes.getByRole('button', { name: /كبير/ }))
-    chooseColor('أسود')
-    expect(within(card()).getByText(/45\.00/)).toBeTruthy()
-    chooseColor('أحمر') // red has no large
-    expect(sizes.getByRole('button', { name: /كبير/ }).getAttribute('aria-pressed')).toBe('false')
-    expect(sizes.getByRole('button', { name: /صغير/ }).getAttribute('aria-pressed')).toBe('false')
-    expect(card().textContent).toContain(ar.present.pickSize)
-  })
-
-  it('a product with one colour or one size has nothing to choose there', async () => {
+  it('a product with a single variant has nothing to choose', async () => {
     await db.variants.clear()
-    await db.variants.bulkPut([
-      variant('v1', { color: 'أسود', size: 'كبير', stock_qty: 37 }),
-      variant('v2', { color: 'أسود', size: 'صغير', stock_qty: 3, price: 5000 }),
-    ])
+    await db.variants.put(variant('v1', { color: 'أسود', size: 'كبير', stock_qty: 37 }))
     renderPresent()
     await openProduct()
-    // the colour is the only one, so it is chosen; the size still waits for the customer
-    expect(screen.getByRole('button', { name: /أسود/ }).getAttribute('aria-pressed')).toBe('true')
-    expect(card().textContent).toContain(ar.present.pickSize)
-    fireEvent.click(
-      within(screen.getByRole('group', { name: ar.present.size })).getByRole('button', {
-        name: /كبير/,
-      }),
-    )
+    expect(screen.queryByRole('group', { name: ar.present.size })).toBeNull()
     expect(within(card()).getByRole('button', { name: ar.present.add })).toBeTruthy()
   })
 })
@@ -447,7 +439,7 @@ describe('what the customer must never reach', () => {
     check()
     await openProduct()
     check()
-    chooseColor('أسود')
+    choose('أسود')
     fireEvent.click(within(card()).getByRole('button', { name: ar.present.add }))
     fireEvent.click(await screen.findByRole('button', { name: new RegExp(ar.present.cart) }))
     await screen.findByRole('dialog', { name: ar.present.cart })

@@ -40,14 +40,13 @@ export default function Present() {
   const [text, setText] = useState('')
   const q = useDeferredValue(text.trim())
   const [categoryId, setCategoryId] = useState<string | null>(null)
-  const [color, setColor] = useState<string | undefined>()
   const [productId, setProductId] = useState<string | null>(null)
   const [cartOpen, setCartOpen] = useState(false)
   const [gate, setGate] = useState<'exit' | 'done' | null>(null)
 
   const catalog = useMemo(
-    () => (snapshot ? buildPresentCatalog(snapshot, { q, color, hideOutOfStock }) : null),
-    [snapshot, q, color, hideOutOfStock],
+    () => (snapshot ? buildPresentCatalog(snapshot, { q, hideOutOfStock }) : null),
+    [snapshot, q, hideOutOfStock],
   )
 
   // Everything in the cart, with names and prices, read from the device (a variant that has since
@@ -95,7 +94,6 @@ export default function Present() {
     if (product) setProductId(null)
     else {
       setCategoryId(null)
-      setColor(undefined)
       setText('')
     }
   }
@@ -173,28 +171,6 @@ export default function Present() {
             <button type="button" onClick={goBack} className="min-h-11 w-fit font-bold underline">
               → {ar.present.categories}
             </button>
-            {(catalog.colors.length > 1 || color !== undefined) && (
-              <div
-                role="group"
-                aria-label={ar.present.color}
-                className="flex gap-2 overflow-x-auto"
-              >
-                {[undefined, ...catalog.colors].map((c) => (
-                  <button
-                    key={c ?? ALL}
-                    type="button"
-                    aria-pressed={color === c}
-                    onClick={() => setColor(c)}
-                    className={`min-h-12 shrink-0 rounded-full border-2 px-5 text-lg font-bold ${
-                      color === c ? 'border-navy bg-navy text-white' : 'border-navy/30 bg-white'
-                    }`}
-                  >
-                    {color === c && <span aria-hidden="true">✓ </span>}
-                    {c ?? ar.present.allColors}
-                  </button>
-                ))}
-              </div>
-            )}
             {shown.length === 0 ? (
               <p className="py-10 text-center text-lg">{ar.present.noProducts}</p>
             ) : (

@@ -884,14 +884,14 @@ test('M8: search with synonyms and typos, filters, synonyms from Settings, prese
   await search().fill('ارجيلة')
   await expect(tile(PALM)).toBeVisible()
 
-  // presentation mode: search with a synonym, pick a colour, the price follows; no links anywhere
+  // presentation mode: search with a synonym, pick a variant, the price follows; no links anywhere
   await page.getByRole('link', { name: ar.catalog.present }).click()
   await page.getByRole('searchbox', { name: ar.present.search }).fill('ارجيلة')
   await page.getByRole('button', { name: new RegExp(PALM) }).click()
   const palm = await findProduct(PALM)
   const silver = palm.variants.find((v) => v.color === 'فضي')!
   await page
-    .getByRole('group', { name: ar.present.color })
+    .getByRole('group', { name: ar.present.option })
     .getByRole('button', { name: /فضي/ })
     .click()
   await expect(page.getByRole('region', { name: ar.present.chosen })).toContainText(
