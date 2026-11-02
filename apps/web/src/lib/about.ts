@@ -11,7 +11,7 @@ export const COPYRIGHT_YEAR = 2026
 export const CONTACT = {
   email: 'diaaararx@gmail.com',
   /** International format, digits only, no + or spaces (for wa.me), e.g. '9725XXXXXXXX'. */
-  whatsapp: '',
+  whatsapp: '972568207267',
 } as const
 
 /** From package.json at build time (see vite.config.ts). */
