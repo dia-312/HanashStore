@@ -1,5 +1,5 @@
 import type { DbImage } from '../db'
-import { matchesSearch, stockStatus, type Snapshot } from './localCatalog'
+import { searchHits, stockStatus, type Snapshot } from './localCatalog'
 import { pendingStock } from './sync/effectiveStock'
 
 // What presentation mode may show (SPEC section 10): names, images, descriptions, prices, colours
@@ -25,11 +25,16 @@ export interface PresentProduct {
   description: string | null
   category_id: string
   thumb: string | null
+  /** The pictures of the whole product, in the rep's order. */
   images: DbImage[]
+  /** What the gallery swipes through: the product's pictures, then the ones of single variants. */
+  gallery: DbImage[]
   priceMin: number
   priceMax: number
   availability: Availability
   variants: PresentVariant[]
+  /** The variants the search words picked, when they picked only some: shown selected. */
+  matched: string[]
 }
 
 export interface PresentCategory {
@@ -67,10 +72,13 @@ export function buildPresentCatalog(
     list.sort((a, b) => a.sort_order - b.sort_order || a.id.localeCompare(b.id))
   }
 
+  const query = options.q?.trim() ?? ''
+  const hits = query ? new Map(searchHits(s, query).map((h) => [h.productId, h])) : null
   const products: PresentProduct[] = []
   for (const p of s.products) {
     if (!p.is_active || !activeCategories.has(p.category_id)) continue
-    if (options.q && !matchesSearch(p.search_text, options.q)) continue
+    const hit = hits?.get(p.id)
+    if (hits && !hit) continue
     const productImages = images.get(p.id) ?? []
     const variants: PresentVariant[] = s.variants
       .filter((v) => v.product_id === p.id && v.is_active)
@@ -101,10 +109,20 @@ export function buildPresentCatalog(
       category_id: p.category_id,
       thumb: wholeProduct[0]?.thumb_url ?? null,
       images: wholeProduct,
+      gallery: [
+        ...wholeProduct,
+        ...productImages.filter(
+          (i) => i.variant_id !== null && variants.some((v) => v.id === i.variant_id),
+        ),
+      ],
       priceMin: Math.min(...variants.map((v) => v.price)),
       priceMax: Math.max(...variants.map((v) => v.price)),
       availability: best,
       variants,
+      matched:
+        hit && hit.variantIds.length < variants.length
+          ? hit.variantIds.filter((id) => variants.some((v) => v.id === id))
+          : [],
     })
   }
   const collator = new Intl.Collator('ar')

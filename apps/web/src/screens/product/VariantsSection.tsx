@@ -28,10 +28,13 @@ function label(v: Variant): string {
 
 function VariantCard({
   variant,
+  highlighted,
   onChange,
   onHistory,
 }: {
   variant: Variant
+  /** The search picked this one: a thicker frame and the word, never colour alone. */
+  highlighted: boolean
   onChange: () => Promise<void>
   onHistory: () => void
 }) {
@@ -65,10 +68,18 @@ function VariantCard({
 
   return (
     <li
-      className={`grid gap-3 rounded-xl border-2 border-navy/15 p-3 ${variant.is_active ? '' : 'opacity-60'}`}
+      className={`grid gap-3 rounded-xl border-2 p-3 ${
+        highlighted ? 'border-4 border-accent bg-accent/10' : 'border-navy/15'
+      } ${variant.is_active ? '' : 'opacity-60'}`}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
+          {highlighted && (
+            <span className="me-2 font-bold">
+              <span aria-hidden="true">◆ </span>
+              {ar.product.matched}
+            </span>
+          )}
           <span className="font-bold">{label(variant)}</span>{' '}
           <span className="text-sm opacity-70">
             {ar.product.sku}: <bdi>{variant.sku}</bdi>
@@ -235,10 +246,13 @@ function AddVariant({ productId, onAdded }: { productId: string; onAdded: () => 
 export function VariantsSection({
   productId,
   variants,
+  highlight,
   onChange,
 }: {
   productId: string
   variants: Variant[]
+  /** Ids of the variants a search picked in the catalog. */
+  highlight?: ReadonlySet<string>
   onChange: () => Promise<void>
 }) {
   const [historyOf, setHistoryOf] = useState<Variant | null>(null)
@@ -251,6 +265,7 @@ export function VariantsSection({
           <VariantCard
             key={`${variant.id}:${variant.price}:${variant.min_stock}`}
             variant={variant}
+            highlighted={highlight?.has(variant.id) ?? false}
             onChange={onChange}
             onHistory={() => setHistoryOf(variant)}
           />

@@ -230,6 +230,22 @@ class CommandIn(BaseModel):
     created_at: datetime
 
 
+class SynonymGroupIn(BaseModel):
+    """One group in a PUT /synonyms: no id = a new group, an id = an existing one."""
+
+    id: uuid.UUID | None = None
+    terms: Annotated[list[Name], Field(min_length=2, max_length=30)]
+
+
+class SynonymsPut(BaseModel):
+    groups: Annotated[list[SynonymGroupIn], Field(max_length=200)]
+
+
+class SynonymGroupOut(Out):
+    id: uuid.UUID
+    terms: list[str]
+
+
 class PushRequest(BaseModel):
     device_id: uuid.UUID
     commands: Annotated[list[CommandIn], Field(max_length=50)]
@@ -239,6 +255,13 @@ class SyncCategory(Out):
     id: uuid.UUID
     name: str
     sort_order: int
+    is_active: bool
+    change_seq: int
+
+
+class SyncSynonymGroup(Out):
+    id: uuid.UUID
+    terms: list[str]
     is_active: bool
     change_seq: int
 
@@ -362,6 +385,7 @@ class SyncReturnLine(Out):
 
 class PullChanges(BaseModel):
     categories: list[SyncCategory]
+    synonym_groups: list[SyncSynonymGroup]
     products: list[SyncProduct]
     variants: list[SyncVariant]
     images: list[SyncImage]

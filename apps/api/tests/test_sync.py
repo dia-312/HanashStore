@@ -40,6 +40,7 @@ def test_pull_on_an_empty_server(api: TestClient) -> None:
     assert page == {
         "changes": {
             "categories": [],
+            "synonym_groups": [],
             "products": [],
             "variants": [],
             "images": [],

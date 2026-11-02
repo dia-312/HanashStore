@@ -36,6 +36,7 @@ from app.models import (
     ProductVariant,
     Return,
     ReturnLine,
+    SynonymGroup,
 )
 from app.schemas import (
     AdjustPayload,
@@ -61,6 +62,7 @@ from app.schemas import (
     SyncProduct,
     SyncReturn,
     SyncReturnLine,
+    SyncSynonymGroup,
     SyncVariant,
 )
 from app.services import catalog, customers, invoices, payments, stock
@@ -83,6 +85,7 @@ _TABLES = (
     Payment,
     Return,
     ReturnLine,
+    SynonymGroup,
 )
 
 # Invoices, their lines and their payments are kept on the device for the last 12 months only
@@ -134,6 +137,7 @@ def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
         payments,
         return_rows,
         return_line_rows,
+        synonym_rows,
     ) = groups
     has_more = boundary is not None and any(
         db.scalar(select(t.id).where(t.change_seq > boundary, *_in_window(t, cutoff)).limit(1))
@@ -145,6 +149,7 @@ def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
     return PullPage(
         changes=PullChanges(
             categories=[SyncCategory.model_validate(r) for r in categories],
+            synonym_groups=[SyncSynonymGroup.model_validate(r) for r in synonym_rows],
             products=[SyncProduct.model_validate(r) for r in products],
             variants=[SyncVariant.model_validate(r) for r in variants],
             images=[SyncImage.model_validate(r) for r in images],
