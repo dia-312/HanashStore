@@ -905,3 +905,47 @@ test('M8: search with synonyms and typos, filters, synonyms from Settings, prese
   await pressPin(PIN)
   await expect(page.getByRole('searchbox', { name: ar.catalog.search })).toBeVisible()
 })
+
+test('M9a: the home screen (read on the device) agrees with the reports (computed by the server)', async () => {
+  const money = (agorot: number) =>
+    `₪ ${(Math.abs(agorot) / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}`
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Hebron' }).format(new Date())
+  const range = `from=${today}&to=${today}`
+
+  await page.context().setOffline(false)
+  await goTo(ar.nav.home)
+  // let the last of the earlier tests reach the server and come back
+  await expect(chip(/تمت المزامنة/)).toBeVisible({ timeout: 60_000 })
+
+  const sales = await json<{ net: number; invoices: number }>(`/api/v1/reports/sales?${range}`)
+  const collections = await json<{ net: number }>(`/api/v1/reports/collections?${range}`)
+  const balances = await json<{ total_owed: number }>('/api/v1/reports/balances')
+
+  const salesCard = page.getByRole('region', { name: ar.home.salesToday })
+  await expect(salesCard).toContainText(money(sales.net))
+  await expect(salesCard).toContainText(`${sales.invoices} فاتورة`)
+  await expect(page.getByRole('region', { name: ar.home.collectionsToday })).toContainText(
+    money(collections.net),
+  )
+  await expect(page.getByRole('link', { name: new RegExp(ar.home.owed) })).toContainText(
+    money(balances.total_owed),
+  )
+
+  // the same screen offline: nothing to fetch, nothing changes
+  await page.context().setOffline(true)
+  await goTo(ar.nav.catalog)
+  await goTo(ar.nav.home)
+  await expect(salesCard).toContainText(money(sales.net))
+
+  // reports need the internet and say so; back online they show the server's numbers
+  await goTo(ar.nav.reports)
+  await expect(page.getByText(ar.reports.needsInternet)).toBeVisible()
+  await page.context().setOffline(false)
+  await goTo(ar.nav.home)
+  await goTo(ar.nav.reports)
+  await expect(page.getByText(money(sales.net)).first()).toBeVisible({ timeout: 30_000 })
+  await page.getByRole('tab', { name: ar.reports.tabs.balances }).click()
+  await expect(page.getByText(money(balances.total_owed)).first()).toBeVisible()
+  await page.getByRole('tab', { name: ar.reports.tabs.stock }).click()
+  await expect(page.getByRole('heading', { level: 3 }).first()).toBeVisible()
+})

@@ -278,6 +278,26 @@ db.version(6).stores({
   settings: 'key',
 })
 
+// Version 7 (M9a): the home screen asks for "payments since yesterday" and "returns since last
+// month", so those dates are indexed. Nothing stored is touched.
+db.version(7).stores({
+  meta: 'key',
+  categories: 'id',
+  synonym_groups: 'id',
+  products: 'id, category_id',
+  variants: 'id, product_id',
+  images: 'id, product_id',
+  outbox: '++seq, &id, status',
+  customers: 'id',
+  invoices: 'id, customer_id, status, issued_at',
+  invoice_lines: 'id, invoice_id',
+  payments: 'id, customer_id, invoice_id, paid_at',
+  returns: 'id, customer_id, invoice_id, issued_at',
+  return_lines: 'id, return_id, invoice_line_id',
+  carts: 'id',
+  settings: 'key',
+})
+
 export async function getMeta<T>(key: string): Promise<T | undefined> {
   return (await db.meta.get(key))?.value as T | undefined
 }

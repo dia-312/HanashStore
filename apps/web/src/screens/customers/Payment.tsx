@@ -6,6 +6,7 @@ import { ar, fill } from '../../i18n/ar'
 import { hebronDay } from '../../lib/date'
 import { buildCustomerProfile, loadSalesSnapshot } from '../../lib/localSales'
 import { formatMoney, parseMoney } from '../../lib/money'
+import { clockAware } from '../../lib/clockGuard'
 import { recordPayment, SaleError } from '../../lib/sales'
 import type { PaymentMethod } from '../../lib/sync/commands'
 import { useLive } from '../../lib/useLive'
@@ -52,7 +53,7 @@ export default function Payment() {
       setError(
         e instanceof SaleError && e.code === 'CHEQUE_NOTE'
           ? ar.payment.chequeNote
-          : ar.payment.failed,
+          : clockAware(e, ar.payment.failed),
       )
       setBusy(false)
     }

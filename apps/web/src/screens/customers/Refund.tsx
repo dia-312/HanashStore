@@ -5,6 +5,7 @@ import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { ar, fill } from '../../i18n/ar'
 import { buildCustomerProfile, loadSalesSnapshot } from '../../lib/localSales'
 import { agorotToInput, formatMoney, parseMoney } from '../../lib/money'
+import { clockAware } from '../../lib/clockGuard'
 import { recordRefund, SaleError } from '../../lib/sales'
 import type { PaymentMethod } from '../../lib/sync/commands'
 import { useLive } from '../../lib/useLive'
@@ -52,7 +53,7 @@ export default function Refund() {
       setError(
         e instanceof SaleError && e.code === 'CHEQUE_NOTE'
           ? ar.refund.chequeNote
-          : ar.refund.failed,
+          : clockAware(e, ar.refund.failed),
       )
       setBusy(false)
     }

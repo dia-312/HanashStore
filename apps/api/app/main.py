@@ -21,6 +21,7 @@ from app.routers import (
     images,
     imports,
     products,
+    reports,
     settings,
     sync,
     synonyms,
@@ -91,6 +92,7 @@ def create_app() -> FastAPI:
         settings,
         documents,
         synonyms,
+        reports,
     ):
         app.include_router(module.router, prefix="/api/v1")
     # Caddy serves /media straight from the volume in production; this keeps dev and tests simple.

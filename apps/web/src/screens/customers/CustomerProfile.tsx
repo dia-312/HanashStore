@@ -4,6 +4,7 @@ import { Balance } from '../../components/Balance'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { InvoiceRow } from '../../components/InvoiceRow'
 import { Tag } from '../../components/Tag'
+import { clockAware } from '../../lib/clockGuard'
 import { ar, fill } from '../../i18n/ar'
 import { formatDateTime } from '../../lib/date'
 import { buildCustomerProfile, loadSalesSnapshot, type PaymentItem } from '../../lib/localSales'
@@ -24,6 +25,7 @@ export function CustomerProfile() {
   )
   const [stopping, setStopping] = useState(false)
   const [voiding, setVoiding] = useState<PaymentItem | null>(null)
+  const [voidProblem, setVoidProblem] = useState<string | null>(null)
   const [reason, setReason] = useState('')
 
   if (customer === undefined) return <p aria-busy="true">{ar.common.loading}</p>
@@ -227,15 +229,21 @@ export function CustomerProfile() {
           lines={[{ label: ar.payment.amount, value: formatMoney(voiding.amount) }]}
           confirmLabel={voiding.kind === 'refund' ? ar.refund.voidConfirm : ar.payment.voidConfirm}
           confirmDisabled={reason.trim() === ''}
+          error={voidProblem}
           onCancel={() => {
             setVoiding(null)
+            setVoidProblem(null)
             setReason('')
           }}
           onConfirm={() => {
-            void voidPayment(voiding.id, reason).then(() => {
-              setVoiding(null)
-              setReason('')
-            })
+            void voidPayment(voiding.id, reason).then(
+              () => {
+                setVoiding(null)
+                setReason('')
+                setVoidProblem(null)
+              },
+              (e: unknown) => setVoidProblem(clockAware(e, ar.errors.generic)),
+            )
           }}
         >
           <label className="mb-3 grid gap-1">

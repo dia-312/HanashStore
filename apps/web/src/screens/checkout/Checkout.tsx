@@ -9,6 +9,7 @@ import { getCart, moveCartToCustomer } from '../../lib/cart'
 import { loadSnapshot } from '../../lib/localCatalog'
 import { buildCustomerList, loadSalesSnapshot } from '../../lib/localSales'
 import { formatMoney, parseMoney } from '../../lib/money'
+import { clockAware } from '../../lib/clockGuard'
 import { SaleError, confirmSale } from '../../lib/sales'
 import type { PaymentMethod } from '../../lib/sync/commands'
 import { pendingStock } from '../../lib/sync/effectiveStock'
@@ -155,7 +156,7 @@ export default function Checkout() {
         setError(fill(ar.checkout.stockProblem, { name, n: e.available ?? 0 }))
       } else if (e instanceof SaleError && e.code === 'BAD_DISCOUNT')
         setError(ar.checkout.badDiscount)
-      else setError(ar.checkout.failed)
+      else setError(clockAware(e, ar.checkout.failed))
     } finally {
       setBusy(false)
     }

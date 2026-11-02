@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router'
 import { ConfirmSheet } from '../../components/ConfirmSheet'
 import { InvoiceTags } from '../../components/InvoiceRow'
 import { Tag } from '../../components/Tag'
+import { clockAware } from '../../lib/clockGuard'
 import { ar, fill } from '../../i18n/ar'
 import { formatDateTime } from '../../lib/date'
 import { invoiceDocument } from '../../lib/documents'
@@ -29,6 +30,7 @@ export default function InvoiceView() {
     return invoiceDocument(snapshot, invoiceId, settings)
   }, [invoiceId])
   const [cancelling, setCancelling] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
   const [reason, setReason] = useState('')
   const [voidPayment, setVoidPayment] = useState<boolean | null>(null)
 
@@ -39,6 +41,7 @@ export default function InvoiceView() {
   const ready = reason.trim() !== '' && (!needsAnswer || voidPayment !== null)
   const closeSheet = () => {
     setCancelling(false)
+    setProblem(null)
     setReason('')
     setVoidPayment(null)
   }
@@ -227,10 +230,25 @@ export default function InvoiceView() {
         </Suspense>
       )}
 
+      {problem && !cancelling && (
+        <p role="alert" className="font-bold text-red-700">
+          <span aria-hidden="true">⚠ </span>
+          {problem}
+        </p>
+      )}
       {invoice.status === 'confirmed' && (
         <div className="flex flex-wrap gap-2">
           {!invoice.delivered && (
-            <button type="button" className={button} onClick={() => void markDelivered(invoice.id)}>
+            <button
+              type="button"
+              className={button}
+              onClick={() =>
+                void markDelivered(invoice.id).then(
+                  () => setProblem(null),
+                  (e: unknown) => setProblem(clockAware(e, ar.errors.generic)),
+                )
+              }
+            >
               {ar.invoices.markDelivered}
             </button>
           )}
@@ -260,10 +278,15 @@ export default function InvoiceView() {
           lines={[{ label: ar.invoices.total, value: formatMoney(invoice.total) }]}
           confirmLabel={ar.invoices.cancelConfirm}
           confirmDisabled={!ready}
+          error={problem}
           onCancel={closeSheet}
           onConfirm={async () => {
-            await cancelInvoice(invoice.id, reason, voidPayment === true)
-            closeSheet()
+            try {
+              await cancelInvoice(invoice.id, reason, voidPayment === true)
+              closeSheet()
+            } catch (e) {
+              setProblem(clockAware(e, ar.errors.generic))
+            }
           }}
         >
           <label className="mb-3 grid gap-1">

@@ -11,6 +11,7 @@ import {
   returnableLines,
 } from '../../lib/localSales'
 import { formatMoney, parseCount } from '../../lib/money'
+import { clockAware } from '../../lib/clockGuard'
 import { createReturn, SaleError } from '../../lib/sales'
 import type { Disposition } from '../../lib/sync/commands'
 import { useLive } from '../../lib/useLive'
@@ -94,7 +95,7 @@ export default function Return() {
       setError(
         e instanceof SaleError && e.code === 'BAD_RETURN_QTY'
           ? ar.returns.badQty
-          : ar.returns.failed,
+          : clockAware(e, ar.returns.failed),
       )
       setBusy(false)
     }
