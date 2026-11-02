@@ -2,14 +2,17 @@
 
 python -m app.cli create-user --name "Abu Mahmoud"      (password from ADMIN_PASSWORD or a prompt)
 python -m app.cli recompute-stock [--fix]                (check the stock cache vs the movements)
+python -m app.cli check-books                            (are the books consistent?)
+python -m app.cli after-restore                          (run once after restoring a backup)
 """
 
 import argparse
 import getpass
 import os
 import sys
+import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -18,6 +21,7 @@ from app.db import get_engine
 from app.ids import uuid7
 from app.models import ProductVariant, User
 from app.security import hash_secret
+from app.services import integrity
 from app.services.stock import stock_mismatches
 
 MIN_PASSWORD_LENGTH = 8
@@ -59,6 +63,28 @@ def recompute_stock(fix: bool) -> int:
         return 0
 
 
+def check_books() -> int:
+    """0 when every rule holds, 1 with the broken ones listed."""
+    with Session(get_engine()) as session:
+        report = integrity.check(session)
+    print("rows: " + ", ".join(f"{table} {n}" for table, n in report.counts.items()))
+    for problem in report.problems:
+        print(f"PROBLEM: {problem}")
+    print("books are consistent" if report.ok else f"{len(report.problems)} problem(s)")
+    return 0 if report.ok else 1
+
+
+def after_restore() -> int:
+    """A restored database is older than what the devices have read. A new epoch tells every
+    device to drop what it read from the server and read it again (its unsent work is kept)."""
+    with Session(get_engine()) as session:
+        epoch = uuid.uuid4()
+        session.execute(text("UPDATE sync_clock SET epoch = :epoch WHERE id = 1"), {"epoch": epoch})
+        session.commit()
+    print(f"new sync epoch {epoch}: devices will read everything again at their next sync")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="app.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -68,6 +94,8 @@ def main(argv: list[str] | None = None) -> int:
         "recompute-stock", help="compare variants.stock_qty with the sum of their movements"
     )
     recompute.add_argument("--fix", action="store_true", help="write the sums into the cache")
+    sub.add_parser("check-books", help="check that the books are consistent")
+    sub.add_parser("after-restore", help="tell the devices the server was restored from a backup")
     args = parser.parse_args(argv)
 
     if args.command == "create-user":
@@ -81,6 +109,10 @@ def main(argv: list[str] | None = None) -> int:
             return 1
     elif args.command == "recompute-stock":
         return recompute_stock(fix=args.fix)
+    elif args.command == "check-books":
+        return check_books()
+    elif args.command == "after-restore":
+        return after_restore()
     return 0
 
 

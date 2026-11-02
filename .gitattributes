@@ -1,3 +1,7 @@
 * text=auto eol=lf
 *.woff2 binary
 *.png binary
+# Shell scripts run in Linux containers: they must keep Unix line endings on every machine.
+*.sh text eol=lf
+ops/** text eol=lf
+Caddyfile* text eol=lf

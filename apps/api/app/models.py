@@ -57,6 +57,8 @@ class SyncClock(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     last_seq: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    # Changes when the server is restored from a backup (see migration 0008).
+    epoch: Mapped[uuid.UUID] = mapped_column(Uuid, nullable=False)
 
 
 class AuthSession(Base):

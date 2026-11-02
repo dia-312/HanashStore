@@ -1,0 +1,19 @@
+# Only for scripts/backup-selftest.sh: a local S3 server standing in for Cloudflare R2 / Backblaze B2,
+# so the whole backup, restore and prune path is exercised with the real production images.
+services:
+  s3:
+    image: rclone/rclone:latest
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        mkdir -p /data/hanash-backup
+        exec rclone serve s3 /data --addr :9000 --auth-key test-access,test-secret-1234
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:9000/ || true"]
+      interval: 3s
+      retries: 3
+
+  backup:
+    depends_on:
+      s3:
+        condition: service_started

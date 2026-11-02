@@ -165,6 +165,7 @@ def pull(db: Session, cursor: int, limit: int = PULL_LIMIT) -> PullPage:
         ),
         cursor=max(seen, default=cursor),
         has_more=has_more,
+        epoch=str(db.scalar(text("SELECT epoch FROM sync_clock WHERE id = 1"))),
         settings=settings_service.get_all(db),
     )
 

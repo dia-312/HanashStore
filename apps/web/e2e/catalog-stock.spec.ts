@@ -949,3 +949,31 @@ test('M9a: the home screen (read on the device) agrees with the reports (compute
   await page.getByRole('tab', { name: ar.reports.tabs.stock }).click()
   await expect(page.getByRole('heading', { level: 3 }).first()).toBeVisible()
 })
+
+test('M9b: export all the data: the file is made first, then it can be saved', async () => {
+  await page.context().setOffline(false)
+  await goTo(ar.nav.settings)
+  await page.getByRole('link', { name: ar.settings.exportData }).click()
+  // two taps: nothing to save before the file is made
+  await expect(page.getByRole('button', { name: ar.exportData.save })).toHaveCount(0)
+  await page.getByRole('button', { name: ar.exportData.prepare }).click()
+  await expect(page.getByText(/hanash-export-\d{4}-\d{2}-\d{2}\.zip/)).toBeVisible({
+    timeout: 60_000,
+  })
+  await expect(page.getByRole('button', { name: ar.exportData.save })).toBeVisible()
+
+  // the file really has the books in it
+  const res = await (await server()).get('/api/v1/export')
+  expect(res.headers()['content-type']).toBe('application/zip')
+  const body = await res.body()
+  expect(body.subarray(0, 2).toString()).toBe('PK')
+  expect(body.length).toBeGreaterThan(500)
+
+  // offline it says so instead of failing
+  await page.context().setOffline(true)
+  await goTo(ar.nav.settings)
+  await page.getByRole('link', { name: ar.settings.exportData }).click()
+  await expect(page.getByText(ar.needsInternet)).toBeVisible()
+  await expect(page.getByRole('button', { name: ar.exportData.prepare })).toBeDisabled()
+  await page.context().setOffline(false)
+})
