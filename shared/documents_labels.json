@@ -34,6 +34,8 @@
     "invoice": "فاتورة",
     "payment": "دفعة",
     "return": "مرتجع",
+    "refund": "استرداد",
+    "refundVoided": "استرداد ملغى",
     "cancelled": "ملغاة",
     "voided": "دفعة ملغاة",
     "totalDebit": "مجموع المدين",

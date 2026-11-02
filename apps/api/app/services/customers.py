@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.orm import Session
 
 from app import clock
@@ -36,10 +36,14 @@ def _balances(db: Session, customer_ids: list[uuid.UUID]) -> dict[uuid.UUID, int
             .group_by(Invoice.customer_id)
         )
     }
+    # Money received counts against what he owes; money handed back counts for it again.
     payments = {
         row[0]: row[1]
         for row in db.execute(
-            select(Payment.customer_id, func.sum(Payment.amount))
+            select(
+                Payment.customer_id,
+                func.sum(case((Payment.kind == "refund", -Payment.amount), else_=Payment.amount)),
+            )
             .where(Payment.customer_id.in_(customer_ids), Payment.status == "active")
             .group_by(Payment.customer_id)
         )

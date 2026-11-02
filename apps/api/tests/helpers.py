@@ -111,7 +111,7 @@ def customer(api: TestClient, name: str = "محل النور", **extra: Any) -> 
     return str(cmd["payload"]["customer_id"])
 
 
-_NUMBERS = {"INV": 0, "REC": 0, "RET": 0}
+_NUMBERS = {"INV": 0, "REC": 0, "RET": 0, "REF": 0}
 
 
 def next_number(kind: str) -> str:
@@ -219,3 +219,26 @@ def return_cmd(
         ],
     }
     return command("return.create", payload)
+
+
+def refund_cmd(
+    customer_id: str,
+    amount: int,
+    *,
+    method: str = "cash",
+    note: str | None = None,
+    number: str | None = None,
+    refunded_at: str = "2026-11-05T10:00:00Z",
+    refund_id: str | None = None,
+) -> dict[str, Any]:
+    """Money handed back to a customer."""
+    payload = {
+        "refund_id": refund_id or str(uuid.uuid4()),
+        "number": number or next_number("REF"),
+        "customer_id": customer_id,
+        "refunded_at": refunded_at,
+        "amount": amount,
+        "method": method,
+        "note": note,
+    }
+    return command("refund.create", payload)

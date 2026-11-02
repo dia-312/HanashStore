@@ -13,6 +13,7 @@ import {
   type InvoiceCreatePayload,
   type PaymentCreatePayload,
   type PaymentVoidPayload,
+  type RefundCreatePayload,
   type ReturnCreatePayload,
   type PurchasePayload,
 } from '../lib/sync/commands'
@@ -44,6 +45,10 @@ function describe(command: OutboxRow, names: Names): string {
   }
   if (command.type === 'payment.create') {
     const p = command.payload as PaymentCreatePayload
+    return `${p.number} · ${formatMoney(p.amount)}`
+  }
+  if (command.type === 'refund.create') {
+    const p = command.payload as RefundCreatePayload
     return `${p.number} · ${formatMoney(p.amount)}`
   }
   if (command.type === 'payment.void') {

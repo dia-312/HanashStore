@@ -21,6 +21,7 @@ import type {
   PaymentCreatePayload,
   PaymentMethod,
   PaymentVoidPayload,
+  RefundCreatePayload,
   ReturnCreatePayload,
 } from './sync/commands'
 import { syncNow } from './sync/engine'
@@ -391,6 +392,62 @@ export async function recordPayment(
   return { paymentId, number }
 }
 
+export interface RefundInput {
+  customerId: string
+  /** Agorot, more than zero: what he is handed back. */
+  amount: number
+  method: PaymentMethod
+  note?: string
+}
+
+/** Records money handed back to a customer (a return he had already paid for). Saved at once,
+ * queued, never waits for the network. A cheque needs its details in the note. */
+export async function recordRefund(
+  input: RefundInput,
+): Promise<{ refundId: string; number: string }> {
+  if (!Number.isInteger(input.amount) || input.amount <= 0) throw new SaleError('BAD_PAYMENT')
+  if (input.method === 'cheque' && !clean(input.note)) throw new SaleError('CHEQUE_NOTE')
+  const refundId = uuid7()
+  const number = await db.transaction(
+    'rw',
+    [db.outbox, db.payments, db.customers, db.meta],
+    async () => {
+      if (!(await db.customers.get(input.customerId))) throw new SaleError('UNKNOWN_CUSTOMER')
+      const number = await takeNumber('REF')
+      const refundedAt = new Date().toISOString()
+      const payload: RefundCreatePayload = {
+        refund_id: refundId,
+        number,
+        customer_id: input.customerId,
+        refunded_at: refundedAt,
+        amount: input.amount,
+        method: input.method,
+        note: clean(input.note),
+      }
+      const row: DbPayment = {
+        id: refundId,
+        number,
+        kind: 'refund',
+        customer_id: input.customerId,
+        invoice_id: null,
+        method: input.method,
+        amount: input.amount,
+        paid_at: refundedAt,
+        note: payload.note,
+        status: 'active',
+        voided_at: null,
+        void_reason: null,
+        change_seq: 0,
+      }
+      await db.payments.put(row)
+      await enqueue('refund.create', payload)
+      return number
+    },
+  )
+  void syncNow()
+  return { refundId, number }
+}
+
 /** The moment to store for a payment dated `day`: now when it is today, else noon of that day. */
 function paidAtFor(day: string | undefined): string {
   const now = new Date()
@@ -409,6 +466,7 @@ export async function voidPayment(paymentId: string, reason: string): Promise<vo
     reason: reason.trim(),
     customer_id: payment.customer_id,
     amount: payment.amount,
+    kind: payment.kind ?? 'payment',
   }
   await enqueue('payment.void', payload)
   void syncNow()

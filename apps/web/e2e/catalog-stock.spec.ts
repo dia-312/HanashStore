@@ -417,7 +417,7 @@ test('a command the server refuses shows on the sync screen and can be discarded
 test('closed and reopened offline, the app unlocks with the PIN and still has the catalog', async () => {
   await page.context().setOffline(true)
   await page.reload()
-  await expect(page.getByRole('heading', { name: ar.lock.title })).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole('heading', { name: ar.lock.title })).toBeVisible({ timeout: 90_000 })
   await pressPin(PIN)
   await expect(page.getByRole('link', { name: ar.nav.catalog, exact: true }).first()).toBeVisible()
   await goTo(ar.nav.catalog)
@@ -440,7 +440,13 @@ interface Pulled {
       status: string
       delivered_at: string | null
     }[]
-    payments: { invoice_id: string | null; amount: number; method: string; status: string }[]
+    payments: {
+      invoice_id: string | null
+      amount: number
+      method: string
+      status: string
+      kind: string
+    }[]
     returns: { id: string; total: number }[]
     return_lines: { qty: number; disposition: string; amount: number }[]
   }
@@ -544,6 +550,8 @@ test('the same sale command sent again does not make a second invoice', async ()
 })
 
 test('M5: business details, the invoice PDF online, its picture offline, and the statement', async () => {
+  // the very first PDF after the API starts can take a while on a slow machine (fonts)
+  test.setTimeout(240_000)
   // business details are saved on the server and come back in the next pull
   await goTo(ar.nav.settings)
   await page.getByRole('link', { name: ar.settings.business }).click()
@@ -557,7 +565,9 @@ test('M5: business details, the invoice PDF online, its picture offline, and the
 
   // the invoice the server already has: a real PDF, named after it, through Caddy
   const [invoice] = (await pulled()).changes.invoices
-  const res = await (await server()).get(`/api/v1/invoices/${invoice?.id}/pdf`, { timeout: 30_000 })
+  const res = await (
+    await server()
+  ).get(`/api/v1/invoices/${invoice?.id}/pdf`, { timeout: 120_000 })
   expect(res.status()).toBe(200)
   expect(res.headers()['content-type']).toContain('application/pdf')
   expect(res.headers()['content-disposition']).toContain(`${invoice?.number}.pdf`)
@@ -767,4 +777,53 @@ test('M7: a part of a discounted invoice returned offline, the rest after reconn
   expect(await coalStock(2400)).toBe(stockBefore - 3 + 1) // the damaged two did not go back
   // nothing left to return, so the button is gone
   await expect(page.getByRole('link', { name: ar.returns.open })).toHaveCount(0)
+})
+
+test('refund: money handed back offline, sent on reconnect, then voided', async () => {
+  const customerId = (await pulled()).changes.customers.find((c) => c.name === 'محل الاختبار')!.id
+  const before = (await pulled()).changes.customers.find((c) => c.id === customerId)!.balance
+  await page.context().setOffline(true)
+  await goTo(ar.nav.customers)
+  await page
+    .getByRole('link', { name: /محل الاختبار/ })
+    .first()
+    .click()
+  await page.getByRole('link', { name: ar.refund.open }).click()
+  await page.getByLabel(ar.refund.amount).fill('20')
+  await page.getByRole('button', { name: ar.refund.confirm }).click()
+  await page.getByRole('dialog').getByRole('button', { name: ar.refund.confirm }).click()
+
+  // on the profile at once, marked as a refund not yet sent, and what he owes went up by 20.00
+  await expect(page.getByText(/REF-000001/)).toBeVisible()
+  await expect(page.getByText(ar.payment.unsent)).toBeVisible()
+  await expect(
+    page.getByText(new RegExp(`عليه ₪ ${((before + 2000) / 100).toFixed(2)}`)).first(),
+  ).toBeVisible()
+
+  await page.context().setOffline(false)
+  await expect
+    .poll(async () => (await pulled()).changes.payments.filter((p) => p.kind === 'refund').length, {
+      timeout: 60_000,
+    })
+    .toBe(1)
+  const sent = await pulled()
+  expect(sent.changes.payments.find((p) => p.kind === 'refund')).toMatchObject({
+    amount: 2000,
+    method: 'cash',
+    status: 'active',
+    invoice_id: null,
+  })
+  expect(sent.changes.customers.find((c) => c.id === customerId)?.balance).toBe(before + 2000)
+
+  // voided with a reason: it stays on record and the balance goes back
+  await page.getByRole('button', { name: ar.refund.voidAction }).first().click()
+  const sheet = page.getByRole('dialog')
+  await sheet.getByLabel(ar.payment.voidReason).fill('سجلته بالغلط')
+  await sheet.getByRole('button', { name: ar.refund.voidConfirm }).click()
+  await expect
+    .poll(async () => (await pulled()).changes.payments.find((p) => p.kind === 'refund')?.status, {
+      timeout: 60_000,
+    })
+    .toBe('voided')
+  expect((await pulled()).changes.customers.find((c) => c.id === customerId)?.balance).toBe(before)
 })

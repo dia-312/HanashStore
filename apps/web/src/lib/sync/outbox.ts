@@ -7,6 +7,7 @@ import {
   type CustomerPayload,
   type InvoiceCreatePayload,
   type PaymentCreatePayload,
+  type RefundCreatePayload,
   type ReturnCreatePayload,
 } from './commands'
 
@@ -75,6 +76,13 @@ export async function discard(id: string): Promise<void> {
           .equals(p.payment_id)
           .and((x) => x.change_seq === 0)
           .delete()
+      } else if (command?.type === 'refund.create') {
+        const p = command.payload as RefundCreatePayload
+        await db.payments
+          .where('id')
+          .equals(p.refund_id)
+          .and((x) => x.change_seq === 0)
+          .delete()
       } else if (command?.type === 'return.create') {
         const p = command.payload as ReturnCreatePayload
         await db.return_lines
@@ -119,6 +127,10 @@ export async function retry(id: string): Promise<void> {
         const number = await takeNumber('REC')
         payload = { ...(payload as PaymentCreatePayload), number }
         await db.payments.update((payload as PaymentCreatePayload).payment_id, { number })
+      } else if (old.type === 'refund.create' && old.error?.code === 'DUPLICATE_NUMBER') {
+        const number = await takeNumber('REF')
+        payload = { ...(payload as RefundCreatePayload), number }
+        await db.payments.update((payload as RefundCreatePayload).refund_id, { number })
       } else if (old.type === 'return.create' && old.error?.code === 'DUPLICATE_NUMBER') {
         const number = await takeNumber('RET')
         payload = { ...(payload as ReturnCreatePayload), number }

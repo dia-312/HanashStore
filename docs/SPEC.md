@@ -338,6 +338,7 @@ These rules live in one backend service module and one shared frontend module, e
 **Payments**
 
 - `amount > 0`. Voiding sets `status = voided` with a reason; voided payments don't count in balances.
+- **Refunds** (added after the M7 iPad check, client request): money handed back to a customer, usually after a return he had already paid for. Stored in `payments` with `kind = 'refund'` (default `'payment'`), not linked to an invoice, number `REF-000003`, command `refund.create`. Voided like a payment (`payment.void`), with a reason. In the balance an active refund counts the other way: it raises what he owes (or lowers his credit). In the statement it is a debit row ("استرداد"); a voided one is shown only with the toggle. A refund may be larger than his credit (he then owes); the app only warns.
 
 **Paid at checkout**
 
@@ -353,13 +354,14 @@ balance = opening_balance
         + Σ total of confirmed invoices
         − Σ total of returns
         − Σ amount of active payments
+        + Σ amount of active refunds
 ```
 
 Positive = customer owes. Negative = customer has credit. Calculated by query, never stored. The device caches the last server value and adjusts it locally for pending commands.
 
 **Statement (كشف حساب)**
 
-- Chronological rows: opening balance, invoices (debit), returns (credit), payments (credit), with running balance. Cancelled invoices and voided payments are hidden by default, shown with a toggle.
+- Chronological rows: opening balance, invoices (debit), returns (credit), payments (credit), refunds (debit), with running balance. Cancelled invoices and voided payments are hidden by default, shown with a toggle.
 
 **Document numbers**
 
@@ -400,7 +402,7 @@ The server is the source of truth; the device holds a full working copy and an o
 4. Response per command: `applied` (with server-calculated values) or `rejected` (with error code and message). Applied commands leave the outbox. Rejected commands stay in a "Sync issues" screen where the rep sees what failed and why, and can discard or fix and retry.
 5. After every push, run a pull.
 
-Command types in the MVP: `customer.upsert`, `invoice.create`, `invoice.mark_delivered`, `invoice.cancel`, `return.create`, `payment.create`, `payment.void`, `stock.purchase`, `stock.adjust`, `stock.damage`.
+Command types in the MVP: `customer.upsert`, `invoice.create`, `invoice.mark_delivered`, `invoice.cancel`, `return.create`, `payment.create`, `payment.void`, `refund.create`, `stock.purchase`, `stock.adjust`, `stock.damage`.
 
 `invoice.create` carries an optional payment; `invoice.cancel` carries `void_payment` (true or false). Catalog management (products, variants, categories, images, settings, synonyms) is online-only through normal REST endpoints, because image uploads need the network anyway.
 

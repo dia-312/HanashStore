@@ -5,6 +5,7 @@ import type {
   InvoiceCreatePayload,
   PaymentCreatePayload,
   PaymentVoidPayload,
+  RefundCreatePayload,
   ReturnCreatePayload,
 } from './commands'
 
@@ -51,9 +52,13 @@ export function pendingBalances(
     } else if (command.type === 'return.create') {
       const p = command.payload as ReturnCreatePayload
       add(p.customer_id, -p.total) // credited to him
+    } else if (command.type === 'refund.create') {
+      const p = command.payload as RefundCreatePayload
+      add(p.customer_id, p.amount) // money handed back: he is owed that much less
     } else if (command.type === 'payment.void') {
       const p = command.payload as PaymentVoidPayload
-      add(p.customer_id, p.amount) // the money goes back onto what he owes
+      // A voided payment goes back onto what he owes; a voided refund comes off it again.
+      add(p.customer_id, p.kind === 'refund' ? -p.amount : p.amount)
     }
   }
   return current

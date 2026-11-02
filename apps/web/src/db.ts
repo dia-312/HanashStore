@@ -100,6 +100,8 @@ export interface DbInvoiceLine {
 export interface DbPayment {
   id: string
   number: string
+  /** Money received (the default; rows from before refunds have no kind) or money handed back. */
+  kind?: 'payment' | 'refund'
   customer_id: string
   invoice_id: string | null
   method: 'cash' | 'transfer' | 'cheque'
