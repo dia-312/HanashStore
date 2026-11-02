@@ -20,6 +20,8 @@ Done when (SPEC section 15): returning every line of a discounted invoice in sev
 | ruff, ruff format, mypy, ESLint, Prettier, tsc | clean |
 
 ## Refund (added after the iPad check)
+**iPad result:** the user tried it on the real iPad (offline refund, sync on reconnect, void, statement row) and it worked.
+
 The user noticed that returning a whole invoice he had partly paid left the customer with credit and no way to record giving the money back. The credit is correct (balance formula); what was missing is the movement. Chosen with the user from four options (explain only / void the payment / question at return time / separate movement): **a separate refund movement**, plus a hint on the return confirmation.
 - **Data**: no new table. `payments.kind` (`payment` | `refund`, migration `0006`, default `payment`). A refund has no invoice, its own number `REF-` (counter and `/sync/numbers` key `REF`; the `REC` counter now looks only at `REC-` numbers), and is voided with the existing `payment.void` (the device adds a `kind` hint so the waiting balance moves the right way).
 - **Balance**: `opening + invoices - returns - active payments + active refunds`, on the server (one `CASE` in the balance query and in the statement carry-forward) and on the device (outbox effect `+amount`; voiding a refund `-amount`).
