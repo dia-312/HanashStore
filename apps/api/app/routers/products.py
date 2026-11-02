@@ -11,7 +11,7 @@ from app.deps import AuthContext, current_auth
 from app.errors import ApiError
 from app.models import Category, Product, ProductImage, ProductVariant
 from app.normalize import normalize_arabic
-from app.pagination import DEFAULT_LIMIT, Limit, decode_cursor, encode_cursor
+from app.pagination import DEFAULT_LIMIT, Limit, as_str, as_uuid, decode_cursor, encode_cursor
 from app.schemas import (
     ImageOut,
     ProductCreate,
@@ -101,9 +101,9 @@ def list_products(
     if q:
         query = query.where(*search_filter(q))
     if cursor:
-        name, last_id = decode_cursor(cursor, 2)
+        name, last_id = decode_cursor(cursor, as_str, as_uuid)
         query = query.where(
-            or_(Product.name > name, and_(Product.name == name, Product.id > uuid.UUID(last_id)))
+            or_(Product.name > name, and_(Product.name == name, Product.id > last_id))
         )
     rows = db.execute(query.order_by(Product.name, Product.id).limit(limit + 1)).all()
     page = rows[:limit]

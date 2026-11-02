@@ -31,6 +31,7 @@ def import_products(
         rows=report.rows,
         mapped_columns=report.mapped,
         ignored_columns=report.ignored,
+        ignored_sheets=report.ignored_sheets,
         errors=report.errors,
         errors_total=report.errors_total,
         new_categories=report.new_categories,

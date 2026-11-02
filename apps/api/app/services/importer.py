@@ -9,6 +9,7 @@ should need to change.
 
 import csv
 import io
+import re
 import uuid
 import zipfile
 from collections.abc import Iterator
@@ -73,10 +74,15 @@ _HEADER_TO_FIELD = {
 }
 
 
+HEADER_SEARCH_ROWS = 15
+
+
 @dataclass
 class ParsedSheet:
     headers: list[str]
     rows: list[tuple[int, list[Any]]]  # (spreadsheet row number, cells)
+    # Other sheets with data: only the first sheet is read, and the report says so.
+    ignored_sheets: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -84,6 +90,7 @@ class Report:
     rows: int = 0
     mapped: dict[str, str] = field(default_factory=dict)
     ignored: list[str] = field(default_factory=list)
+    ignored_sheets: list[str] = field(default_factory=list)
     errors: list[RowIssue] = field(default_factory=list)
     errors_total: int = 0
     new_categories: int = 0
@@ -114,12 +121,39 @@ class PlannedVariant:
 # ---------- reading the file ----------
 
 
+_CURRENCY = re.compile(r"(₪|شيكل|شيقل|ش\.ج|ils|nis)", re.IGNORECASE)
+
+
+def _price_text(value: str) -> str:
+    """'₪ 12.50', '12 شيكل' -> '12.50': a currency mark next to the number is not part of it."""
+    return _CURRENCY.sub("", value).strip()
+
+
 def _cell_text(value: Any) -> str:
     if value is None:
         return ""
     if isinstance(value, float) and value.is_integer():
         return str(int(value))  # a size typed as 25 comes back as 25.0
     return str(value).strip()
+
+
+def _has_required(cells: list[Any]) -> bool:
+    found = {_HEADER_TO_FIELD.get(normalize_arabic(_cell_text(c))) for c in cells}
+    return all(name in found for name in REQUIRED)
+
+
+def _other_sheets(data: bytes) -> list[str]:
+    """Names of the sheets after the first that are not empty (they are not imported)."""
+    try:
+        workbook = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
+        names = []
+        for sheet in workbook.worksheets[1:]:
+            first_rows = sheet.iter_rows(values_only=True, max_row=20)
+            if any(_cell_text(c) != "" for row in first_rows for c in row):
+                names.append(sheet.title)
+        return names
+    except Exception:  # noqa: BLE001 - this only decorates the report; reading the file already worked
+        return []
 
 
 def _read_xlsx(data: bytes) -> Iterator[list[Any]]:
@@ -158,20 +192,31 @@ def parse_file(data: bytes) -> ParsedSheet:
     if data[:4] == b"\xd0\xcf\x11\xe0":
         raise ApiError(422, "IMPORT_OLD_EXCEL", "Old .xls files are not supported; save as .xlsx")
     lines = _read_xlsx(data) if data[:4] == b"PK\x03\x04" else _read_csv(data)
-    header: list[str] | None = None
-    rows: list[tuple[int, list[Any]]] = []
+    filled: list[tuple[int, list[Any]]] = []
     for number, cells in enumerate(lines, start=1):
         if all(_cell_text(c) == "" for c in cells):
             continue
-        if header is None:
-            header = [_cell_text(c) for c in cells]
-            continue
-        rows.append((number, cells))
-        if len(rows) > MAX_ROWS:
+        filled.append((number, cells))
+        if len(filled) > MAX_ROWS + HEADER_SEARCH_ROWS:
             raise ApiError(422, "IMPORT_TOO_MANY_ROWS", f"More than {MAX_ROWS} product rows")
-    if header is None:
+    if not filled:
         raise ApiError(422, "IMPORT_EMPTY", "The file has no rows")
-    return ParsedSheet(headers=header, rows=rows)
+    # The header is the first of the first rows that names every required column; a title or a
+    # blank line above it is skipped. Failing that, the first row is the header, as before, and the
+    # missing columns are reported.
+    start = next(
+        (i for i, (_, cells) in enumerate(filled[:HEADER_SEARCH_ROWS]) if _has_required(cells)),
+        0,
+    )
+    header = [_cell_text(c) for c in filled[start][1]]
+    rows = filled[start + 1 :]
+    if len(rows) > MAX_ROWS:
+        raise ApiError(422, "IMPORT_TOO_MANY_ROWS", f"More than {MAX_ROWS} product rows")
+    return ParsedSheet(
+        headers=header,
+        rows=rows,
+        ignored_sheets=_other_sheets(data) if data[:4] == b"PK\x03\x04" else [],
+    )
 
 
 # ---------- checking the rows ----------
@@ -236,7 +281,7 @@ def _check_rows(
                 report.error(number, "price", "REQUIRED")
             else:
                 price = parse_agorot(
-                    raw_price if not isinstance(raw_price, str) else raw_price.strip()
+                    raw_price if not isinstance(raw_price, str) else _price_text(raw_price)
                 )
         except (MoneyError, ValueError, TypeError):
             report.error(number, "price", "BAD_PRICE", _cell_text(_cell(cells, columns, "price")))
@@ -357,7 +402,7 @@ def run_import(
 ) -> tuple[Report, bool]:
     """Returns (report, applied). Nothing is written unless there are no errors and not dry_run."""
     sheet = parse_file(data)
-    report = Report()
+    report = Report(ignored_sheets=sheet.ignored_sheets)
     columns = _map_columns(sheet, report)
     planned = _check_rows(db, sheet, columns, report) if not report.errors_total else []
 

@@ -21,6 +21,7 @@ Always pass both compose files in development: `docker compose -f docker-compose
 - bundle size: `npm run build && npm run size` (fails over 250 KB gzip, SPEC section 17).
 - large test dataset: `cd apps/api && python scripts/seed_large.py seed-data` (JSON files), then load the catalog part into the dev database: `docker compose <both files> exec -T api python -m scripts.load_seed /seed` (Git Bash on Windows: prefix with `MSYS_NO_PATHCONV=1`). Customers, invoices etc. get loaders in M4/M7.
 - browser journey in WebKit (Safari's engine, iPad viewport) on a throwaway stack: `bash scripts/e2e.sh` (add `E2E_SKIP_SEED=1` to skip loading the large dataset). It covers offline stock-in, reconnect, duplicate commands and rejected commands.
+- QA: `bash scripts/e2e.sh qa` walks every screen in both iPad orientations and reports small targets, unnamed controls, sideways scroll and console errors; `apps/api/tests/test_qa_adversarial.py` (nonsense in every field, auth sweep), `test_qa_state_machine.py` (random histories + invariants), `apps/web/src/lib/search.property.test.ts` (search vs a plain reference), `qa.device.test.ts`. Findings and open risks: `docs/QA-REPORT.md`.
 - PDFs need pango/harfbuzz (in the api image and CI, not on the Windows host): run `pytest tests/test_documents.py` in the container (`docker compose <both files> exec api pytest ...`); the PDF tests skip themselves where pango is missing.
 - stock cache check: `docker compose <both files> exec -T api python -m app.cli recompute-stock [--fix]`.
 

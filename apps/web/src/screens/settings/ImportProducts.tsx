@@ -148,6 +148,14 @@ export default function ImportProducts() {
                   {fill(ar.importer.ignoredColumns, { list: report.ignored_columns.join('، ') })}
                 </p>
               )}
+              {(report.ignored_sheets?.length ?? 0) > 0 && (
+                <p role="alert" className="font-bold">
+                  <span aria-hidden="true">⚠ </span>
+                  {fill(ar.importer.ignoredSheets, {
+                    list: (report.ignored_sheets ?? []).join('، '),
+                  })}
+                </p>
+              )}
               {report.errors_total > 0 && (
                 <div className="grid gap-2 rounded-2xl border-2 border-red-700 bg-white p-4">
                   <h3 className="font-bold text-red-700">

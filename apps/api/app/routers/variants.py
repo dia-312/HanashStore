@@ -1,5 +1,4 @@
 import uuid
-from datetime import datetime
 from typing import Any
 
 from fastapi import APIRouter, Depends
@@ -11,7 +10,15 @@ from app.db import get_db
 from app.deps import AuthContext, current_auth
 from app.errors import ApiError
 from app.models import Product, ProductImage, ProductVariant, StockMovement
-from app.pagination import DEFAULT_LIMIT, Limit, decode_cursor, encode_cursor
+from app.pagination import (
+    DEFAULT_LIMIT,
+    Limit,
+    as_datetime,
+    as_str,
+    as_uuid,
+    decode_cursor,
+    encode_cursor,
+)
 from app.routers.products import search_filter
 from app.schemas import (
     MovementOut,
@@ -56,7 +63,7 @@ def list_variants(
     if q:
         query = query.where(*search_filter(q))
     if cursor:
-        name, sku = decode_cursor(cursor, 2)
+        name, sku = decode_cursor(cursor, as_str, as_str)
         query = query.where(
             or_(Product.name > name, and_(Product.name == name, ProductVariant.sku > sku))
         )
@@ -131,12 +138,11 @@ def variant_movements(
     )
     query = select(running)
     if cursor:
-        created_raw, last_id = decode_cursor(cursor, 2)
-        created = datetime.fromisoformat(created_raw)
+        created, last_id = decode_cursor(cursor, as_datetime, as_uuid)
         query = query.where(
             or_(
                 running.c.created_at < created,
-                and_(running.c.created_at == created, running.c.id < uuid.UUID(last_id)),
+                and_(running.c.created_at == created, running.c.id < last_id),
             )
         )
     rows = db.execute(

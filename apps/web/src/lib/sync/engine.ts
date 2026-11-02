@@ -55,8 +55,39 @@ export const setSyncHooks = (next: SyncHooks) => {
 let running: Promise<void> | null = null
 let again = false
 
-/** One push and pull. Returns false when it failed (the reason is in the store). */
-async function runOnce(): Promise<boolean> {
+/**
+ * The network event can come before the connection is really back (the radio says yes, the route
+ * is not there yet), so the first attempt after it may fail. Waiting for the next minute would
+ * leave a sale unsent for no reason: after a "no connection" while the device says it is online,
+ * try again after 2, 5, then every 15 seconds, until something else answers.
+ */
+export const RETRY_MS = [2_000, 5_000, 15_000]
+let retryTimer: ReturnType<typeof setTimeout> | undefined
+let retryStep = 0
+
+export function stopSyncRetry(): void {
+  clearTimeout(retryTimer)
+  retryTimer = undefined
+  retryStep = 0
+}
+
+function scheduleRetry(outcome: Outcome): void {
+  clearTimeout(retryTimer)
+  retryTimer = undefined
+  if (outcome !== 'network' || !navigator.onLine) {
+    retryStep = 0
+    return
+  }
+  const delay = RETRY_MS[Math.min(retryStep, RETRY_MS.length - 1)] ?? 15_000
+  retryStep += 1
+  retryTimer = setTimeout(() => void syncNow(), delay)
+}
+
+/** How a run ended: fine, no connection (worth trying again very soon), or another failure. */
+type Outcome = 'ok' | 'network' | 'failed'
+
+/** One push and pull. The reason for a failure is in the store. */
+async function runOnce(): Promise<Outcome> {
   try {
     const first = (await getMeta<number>('syncCursor')) === undefined
     const started = performance.now()
@@ -69,12 +100,12 @@ async function runOnce(): Promise<boolean> {
     useSync.setState({ lastSyncAt: now, lastError: null, firstSyncDone: true })
     if (first) void recordPerf({ firstSyncMs: Math.round(performance.now() - started) })
     void runImageQueue() // after first paint and never awaited: images must not delay anything
-    return true
+    return 'ok'
   } catch (e) {
     if (e instanceof ApiError && e.code === 'DEVICE_REVOKED') hooks.onDeviceRevoked()
     else if (e instanceof ApiError && e.code === 'UNAUTHENTICATED') hooks.onSessionExpired()
     useSync.setState({ lastError: e instanceof ApiError ? e.code : 'UNKNOWN' })
-    return false
+    return e instanceof ApiError && e.code === 'NETWORK' ? 'network' : 'failed'
   }
 }
 
@@ -92,11 +123,12 @@ export function syncNow(): Promise<void> {
   useSync.setState({ syncing: true })
   running = (async () => {
     try {
-      let ok = await runOnce()
-      while (ok && again && navigator.onLine && (await pendingCount()) > 0) {
+      let outcome = await runOnce()
+      while (outcome === 'ok' && again && navigator.onLine && (await pendingCount()) > 0) {
         again = false
-        ok = await runOnce()
+        outcome = await runOnce()
       }
+      scheduleRetry(outcome)
     } finally {
       again = false
       useSync.setState({ syncing: false })

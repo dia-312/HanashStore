@@ -141,15 +141,31 @@ export class CatalogSearch {
   }
 }
 
-// The index is rebuilt only when the data it was made from changes: the same arrays (the same
-// snapshot) give back the same index, so typing never rebuilds it.
-const cache = new WeakMap<object, CatalogSearch>()
+// The index is rebuilt only when what it is made of changes. The catalog snapshot is read again on
+// every change anywhere (a stock level, a picture, a waiting command), and none of those touch the
+// words in the index, so the key is the text that goes in, not the snapshot object: rebuilding costs
+// 0.2 s on a PC and several times that on an iPad.
+const signature = (input: SearchInput): string =>
+  [
+    input.categories.map((c) => `${c.id}\u0001${c.name}`).join('\u0002'),
+    input.products
+      .map((p) => `${p.id}\u0001${p.category_id}\u0001${p.name}\u0001${p.description ?? ''}`)
+      .join('\u0002'),
+    input.variants
+      .map(
+        (v) =>
+          `${v.id}\u0001${v.sku}\u0001${v.color ?? ''}\u0001${v.size ?? ''}\u0001${v.is_active}`,
+      )
+      .join('\u0002'),
+    (input.synonyms ?? [])
+      .map((g) => `${g.is_active}\u0001${g.terms.join('\u0003')}`)
+      .join('\u0002'),
+  ].join('\u0004')
 
-export function searchFor(key: object, input: SearchInput): CatalogSearch {
-  let found = cache.get(key)
-  if (!found) {
-    found = new CatalogSearch(input)
-    cache.set(key, found)
-  }
-  return found
+let last: { signature: string; engine: CatalogSearch } | undefined
+
+export function searchFor(input: SearchInput): CatalogSearch {
+  const key = signature(input)
+  if (last?.signature !== key) last = { signature: key, engine: new CatalogSearch(input) }
+  return last.engine
 }

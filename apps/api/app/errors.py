@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import DataError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
@@ -48,6 +49,11 @@ def install_error_handlers(app: FastAPI) -> None:
             {"field": ".".join(str(p) for p in e["loc"]), "message": e["msg"]} for e in exc.errors()
         ]
         return error_response(422, "VALIDATION_ERROR", "Invalid input", {"errors": errors})
+
+    @app.exception_handler(DataError)
+    async def _data_error(_: Request, exc: DataError) -> JSONResponse:
+        # A value the database cannot hold (a NUL character in text, a number out of range).
+        return error_response(422, "VALIDATION_ERROR", "A value cannot be stored")
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(_: Request, exc: StarletteHTTPException) -> JSONResponse:

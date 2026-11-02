@@ -40,6 +40,10 @@ def _period(date_from: date | None, date_to: date | None) -> tuple[date, date]:
     today = clock.utcnow().astimezone(HEBRON).date()
     default_from, default_to = statement.default_period(today)
     start, end = date_from or default_from, date_to or default_to
+    # Years the time-zone maths can handle (0001-01-01 and 9999-12-31 overflow it); any real
+    # statement is far inside this.
+    if start < date(2000, 1, 1) or end > date(2100, 12, 31):
+        raise ApiError(422, "VALIDATION_ERROR", "The period must be between 2000 and 2100")
     if start > end:
         raise ApiError(422, "VALIDATION_ERROR", "The period starts after it ends")
     return start, end
