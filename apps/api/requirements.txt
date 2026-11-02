@@ -11,3 +11,4 @@ openpyxl
 python-multipart
 weasyprint
 jinja2
+tzdata

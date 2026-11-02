@@ -23,6 +23,7 @@ from app.models import (
     ReturnLine,
     StockMovement,
 )
+from app.services import integrity
 from tests import helpers
 
 V1 = "/api/v1"
@@ -193,6 +194,9 @@ def _balance(db: Session, customer: Customer) -> int:
 
 def check_invariants(api: TestClient, db: Session) -> None:
     db.rollback()
+    # the rules of `check-books`, written separately in app/services/integrity.py
+    report = integrity.check(db)
+    assert report.ok, report.problems
     # stock: the cache is the sum of the movements, for every variant
     for variant in db.scalars(select(ProductVariant)):
         moved = _sum(db, StockMovement.qty, StockMovement.variant_id == variant.id)

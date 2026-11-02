@@ -158,8 +158,8 @@ Thirteen features. Each is a user story for the rep, followed by acceptance crit
 
 **F13. Data export and backup.** As the rep, I want my data safe.
 
-- Settings → export all data as a ZIP of CSV files.
-- Daily automatic database backup on the server (see section 13).
+- Settings → export all data as a ZIP of CSV files (`GET /export`: customers, categories, products, variants, invoices and lines, payments and refunds, returns and lines, stock movements; UTF-8 with a byte-order mark, money in shekels, cancelled and voided rows marked, cells that start with `=`, `+`, `-` or `@` made harmless).
+- Automatic database backups on the server, every 4 hours (see section 13).
 
 ## 5. Later (out of scope for the MVP)
 
@@ -652,8 +652,9 @@ The app holds every customer's debt on a device that travels, so security, backu
 
 **Backups**
 
-- Daily `pg_dump` at 03:00 Asia/Hebron to R2, kept 30 days. Images are already in R2.
-- A documented, tested restore procedure in `docs/RESTORE.md`.
+- `pg_dump` every 4 hours (a day's work is too much to lose), plus the product pictures (which live on the server's disk, not in R2), encrypted with restic and stored **outside the server and at another company** (Cloudflare R2 or Backblaze B2). Kept: the 12 newest, one a day for 30 days, one a month for a year (pictures: 7 days, 4 weeks, 6 months). A health-check ping tells the owner when a backup stops.
+- A documented, tested restore procedure in `docs/RESTORE.md`, and a monthly restore drill (`scripts/restore-drill.sh`) that restores the newest backup into a scratch database and runs `check-books` on it.
+- After a restore the server changes its **sync epoch** (`python -m app.cli after-restore`); a device that sees a new epoch forgets what it read from the server and reads it again, keeping its unsent work.
 
 **Performance:** see section 17. It is a top goal, not a nice-to-have.
 

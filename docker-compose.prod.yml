@@ -1,0 +1,112 @@
+# Production: one small server running everything (docs/DEPLOY.md has the whole procedure).
+#   cp .env.example .env     # then fill in the real values: the domain, the passwords, the backup keys
+#   docker compose -f docker-compose.prod.yml up -d --build
+# Nothing here publishes the database or the API: only Caddy listens, on 80 and 443.
+# Image versions are pinned on purpose: update them deliberately (docs/DEPLOY.md, "Updates").
+name: hanash
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  postgres:
+    image: postgres:16.4
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-sales}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-sales}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+    logging: *logging
+
+  api:
+    build: ./apps/api
+    restart: unless-stopped
+    user: "10001:10001"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-sales}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-sales}
+      COOKIE_SECURE: "true"
+      MEDIA_DIR: /data/media
+    volumes:
+      - media:/data/media # product pictures: written here, served by Caddy, backed up
+      - ./apps/web/public/fonts:/app/fonts:ro # the font the PDF embeds
+      - ./shared:/app/shared:ro # the stylesheet and labels the PDF shares with the app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    logging: *logging
+
+  caddy:
+    build:
+      context: .
+      dockerfile: ops/caddy/Dockerfile
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN:?set DOMAIN in .env (the address the iPad opens)}
+      ACME_EMAIL: ${ACME_EMAIL:?set ACME_EMAIL in .env}
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp" # HTTP/3
+    volumes:
+      - media:/media:ro
+      - caddy_data:/data # the certificates: keep this volume
+      - caddy_config:/config
+    depends_on:
+      api:
+        condition: service_healthy
+    logging: *logging
+
+  backup:
+    build: ./ops/backup
+    restart: unless-stopped
+    environment:
+      TZ: Asia/Hebron
+      RESTIC_REPOSITORY: ${RESTIC_REPOSITORY:?set RESTIC_REPOSITORY in .env (the off-server backup place)}
+      RESTIC_PASSWORD: ${RESTIC_PASSWORD:?set RESTIC_PASSWORD in .env (and keep a copy somewhere safe)}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_DEFAULT_REGION: ${AWS_DEFAULT_REGION:-auto}
+      HC_URL: ${HC_URL:-}
+      BACKUP_INIT: ${BACKUP_INIT:-} # true on the very first start only
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER:-sales}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB:-sales}
+    volumes:
+      - media:/media:ro
+      - backup_state:/var/lib/backup # remembers that a repository existed, and the last success
+    depends_on:
+      postgres:
+        condition: service_healthy
+    logging: *logging
+
+volumes:
+  backup_state:
+  pgdata:
+  media:
+  caddy_data:
+  caddy_config:

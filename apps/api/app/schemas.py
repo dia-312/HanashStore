@@ -401,6 +401,8 @@ class PullPage(BaseModel):
     changes: PullChanges
     cursor: int
     has_more: bool
+    # Changes when the server is restored from a backup: a device that sees a new one reads again.
+    epoch: str = ""
     # Business settings travel with every pull: a handful of values, always current.
     settings: dict[str, Any] = {}
 
