@@ -1,6 +1,8 @@
 {
   "name": "hanash-store",
   "private": true,
+  "author": "Diaa Arar",
+  "license": "UNLICENSED",
   "workspaces": ["apps/web"],
   "scripts": {
     "dev": "npm -w apps/web run dev",

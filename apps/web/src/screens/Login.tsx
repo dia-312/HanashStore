@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { ar, fill } from '../i18n/ar'
+import { COPYRIGHT_YEAR, DEVELOPER } from '../lib/about'
 import { ApiError } from '../lib/api'
 import { useAuth } from '../store'
 
@@ -43,7 +44,7 @@ export function Login({ submitLabel = ar.login.submit, onSubmit }: Props) {
   }
 
   return (
-    <main className="grid min-h-full place-items-center p-6">
+    <main className="flex min-h-full flex-col items-center justify-center gap-4 p-6">
       <form
         className="w-full max-w-sm rounded-3xl bg-white p-8 shadow-sm"
         onSubmit={handleSubmit((v) => {
@@ -77,6 +78,10 @@ export function Login({ submitLabel = ar.login.submit, onSubmit }: Props) {
           {submitLabel}
         </button>
       </form>
+
+      <p className="text-sm opacity-70">
+        © <bdi>{COPYRIGHT_YEAR}</bdi> {DEVELOPER.ar}
+      </p>
 
       {replace && (
         <div
