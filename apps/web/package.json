@@ -2,6 +2,8 @@
   "name": "@hanash/web",
   "version": "0.1.0",
   "private": true,
+  "author": "Diaa Arar",
+  "license": "UNLICENSED",
   "type": "module",
   "scripts": {
     "dev": "vite",
