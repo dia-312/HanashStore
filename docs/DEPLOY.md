@@ -116,6 +116,7 @@ skips the question. Its tests: `bash scripts/update.test.sh` (they also run in C
 | --- | --- |
 | The page does not open | `ps`: is `caddy` up? `logs caddy`: certificate problems almost always mean the DNS record is wrong or ports 80/443 are closed |
 | Login says "too many attempts" | wait 15 minutes; it is the limit working |
+| Picture or logo uploads fail | `exec api sh -c 'touch /data/media/.w && rm /data/media/.w'` says Permission denied: the pictures volume is owned by root. `up -d` now fixes this by itself (the `media-init` step); on a server started before that, run once: `docker run --rm -v hanash_media:/m busybox:1.36 chown -R 10001:10001 /m` |
 | The iPad shows "error" in the header | the app's Sync screen says which command and why |
 | The backup health check is red | `logs backup` shows the step that failed; the usual causes: wrong bucket keys, bucket full, disk full |
 | The disk is nearly full | `docker system df`; `docker image prune` removes old images; logs are capped already |

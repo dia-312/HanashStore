@@ -28,6 +28,19 @@ services:
       retries: 10
     logging: *logging
 
+  # The pictures volume is shared by the API (writes, as user 10001), Caddy and the backup (read). Docker
+  # gives a new volume the owner of the first container that mounts it, so without this step the volume
+  # could end up owned by root and every picture and logo upload would fail with "Permission denied".
+  # This runs once at each start, as root, before the API; nothing else is touched.
+  media-init:
+    image: busybox:1.36
+    user: root
+    restart: "no"
+    command: ["chown", "-R", "10001:10001", "/data/media"]
+    volumes:
+      - media:/data/media
+    logging: *logging
+
   api:
     build: ./apps/api
     restart: unless-stopped
@@ -47,6 +60,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      media-init:
+        condition: service_completed_successfully
     healthcheck:
       test:
         - CMD
