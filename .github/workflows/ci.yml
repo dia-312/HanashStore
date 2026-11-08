@@ -93,6 +93,32 @@ jobs:
         if: failure()
         run: docker compose logs
 
+  # The production compose file: the API runs as an unprivileged user and must be able to write the pictures
+  # volume even when another container (or an old server) created that volume owned by root.
+  prod-media:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Start the database and the API with a root-owned pictures volume
+        run: |
+          cat > ci.env <<'EOF'
+          POSTGRES_PASSWORD=ci-only-password
+          DOMAIN=ci.invalid
+          ACME_EMAIL=ci@example.com
+          RESTIC_REPOSITORY=s3:http://127.0.0.1:9/ci
+          RESTIC_PASSWORD=ci-only-password
+          EOF
+          docker volume create hanash_media
+          docker run --rm -v hanash_media:/media:ro alpine:3.20 true
+          docker run --rm -v hanash_media:/m alpine:3.20 stat -c '%U' /m | grep -x root
+          docker compose -f docker-compose.prod.yml --env-file ci.env up -d --build --wait api
+      - name: The API can write a picture file
+        run: |
+          docker compose -f docker-compose.prod.yml --env-file ci.env exec -T api             sh -c 'id -u && mkdir -p /data/media/products/x && touch /data/media/products/x/a.webp && rm -r /data/media/products/x'
+      - name: Logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.prod.yml --env-file ci.env logs
+
   # The browser journey in WebKit (Safari's engine) against a throwaway stack: login, import, stock,
   # offline stock-in and reconnect, duplicate and refused commands. See scripts/e2e.sh.
   e2e:
