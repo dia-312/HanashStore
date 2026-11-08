@@ -2,14 +2,12 @@
 
 One small server runs everything with Docker Compose (`docker-compose.prod.yml`): the database, the API,
 Caddy (the web app, the pictures and HTTPS) and the backup service. This page is the whole procedure, in
-the order to do it. **Nothing here has been run on a real server yet**: the pieces were tested on the
-development machine (the backup and restore path completely, with `scripts/backup-selftest.sh`), and the
-first real deployment is the test of the rest. Read it once through before starting.
+the order to do it. It was run on a real server for the first time on 2026-11-08 (see "Lessons from the first deployment" at the end). Read it once through before starting.
 
 ## What you need first
 | Thing | Notes |
 | --- | --- |
-| A server | Hetzner Cloud **CX22** (2 vCPU, 4 GB RAM, 40 GB), Debian 12 or Ubuntu 24.04, in Germany (Falkenstein or Nuremberg). About 4–5 EUR a month; turn on the provider's own automatic server backups too (about 1 EUR) as a second layer. |
+| A server | Hetzner Cloud **CX22** (listed as **CX23** since late 2026) (2 vCPU, 4 GB RAM, 40 GB), Debian 12 or Ubuntu 24.04, in Germany (Falkenstein or Nuremberg). About 4–5 EUR a month; turn on the provider's own automatic server backups too (about 1 EUR) as a second layer. |
 | A domain name | About 10 USD a year. HTTPS is required for the Home Screen app; a quick tunnel URL changes every time. |
 | A place for the backups | **Not on this server, and at a different company**: a Cloudflare R2 or Backblaze B2 bucket (both have a free allowance). You need its endpoint, a bucket name and an access key pair. |
 | A health-check address (optional but advised) | A free check at healthchecks.io: it emails you if no backup arrived for a while. Copy its ping URL. |
@@ -49,7 +47,7 @@ Fill in `.env` (the comments in the file say what each is). The ones that matter
   `AWS_SECRET_ACCESS_KEY`.
 - `RESTIC_PASSWORD`: encrypts every backup. **Without it the backups cannot be read, even by you.** Put a copy in
   your password manager and one on paper in a safe place, *not* only on the server.
-- `HC_URL`: the health-check ping address.
+- `HC_URL`: the health-check ping address as an **https URL** (`https://hc-ping.com/<uuid>`). The `<uuid>@hc-ping.com` form is an email address: the backup scripts add `/start` and `/fail` to this value and call it with curl, so with the email form every ping fails silently and healthchecks.io reports a dead backup.
 - `BACKUP_INIT=true`: **only for the very first start**, so the backup service may create the (empty) encrypted
   repository in the bucket. Remove the line afterwards. Without it, a wrong bucket name or wrong keys make the backup
   fail loudly instead of quietly making a repository in the wrong place.
@@ -109,3 +107,22 @@ docker compose -f docker-compose.prod.yml up -d --build      # the database is m
 - Nobody is watching the server day to day. The health check emails you when backups stop; add an uptime monitor
   on `/api/health` (UptimeRobot is free) so you hear when the whole site is down.
 - No staging copy. Every update goes straight to the real one; the evening rule above is the safeguard.
+
+## Lessons from the first deployment (2026-11-08)
+- **Who owns what.** The client opens and pays for the accounts (server, domain, backup bucket, health check) with their own
+  card; the developer works over SSH with his own key (only the public key goes into the provider's console). Keep the
+  private key on one machine and give it a passphrase.
+- **Server type.** The console lists one big default; scroll down and pick the smallest with 2 vCPU, 4 GB, 40 GB (CX23).
+  Choose a German or Finnish location. Add the SSH key and tick Backups before "Create".
+- **Domain.** Check the exact name that was bought before touching DNS (the first search showed a different spelling than the
+  purchase). A fresh Porkbun domain carries a root `ALIAS` and a wildcard `CNAME` to its parking page; add an **A record** with
+  host `app` pointing at the server, which wins over the wildcard. Do not start Caddy before
+  `nslookup app.<domain> 1.1.1.1` shows the server's address (Let's Encrypt blocks repeated failures).
+- **`.env` check without showing secrets:** print every variable with the length of secret values and flag leftovers of
+  `<...>` templates. Passwords from `openssl rand -base64 24|32` are 32 and 44 characters, the R2 access key 32, its secret 64.
+- **First backup** creates the encrypted repository only while `BACKUP_INIT=true`; after `backup finished` appears, delete that
+  line and run `docker compose -f docker-compose.prod.yml up -d backup` again.
+- **First user:** `read -rs ADMIN_PASSWORD; export ADMIN_PASSWORD`, then `exec -e ADMIN_PASSWORD api python -m app.cli
+  create-user --name "..."`, then `unset ADMIN_PASSWORD`, so the password is not left in the shell history.
+- **Product list:** the client's sheet had a selling price and a wholesale price column; only the selling price goes into the
+  catalog (the app has one price per variant and no cost prices).
