@@ -81,9 +81,13 @@ Open `https://app.example.com` on the iPad, log in, **add it to the Home Screen*
 
 ## Updates
 ```bash
-cd HanashStore && git pull
-docker compose -f docker-compose.prod.yml up -d --build      # the database is migrated when the API starts
+cd ~/HanashStore && bash scripts/update.sh
 ```
+The script shows what will change (and says so if a change touches the database), asks before it does anything, takes a
+backup, pulls the newest `main`, rebuilds, and waits for `https://<your domain>/api/health` to say ok. **If the new version
+does not come up healthy it puts the old one back by itself** (exit code 1 and "ROLLED BACK"). It stops without changing
+anything when the folder has local changes, when the backup fails, or when you do not confirm. `bash scripts/update.sh -y`
+skips the question. Its tests: `bash scripts/update.test.sh` (they also run in CI).
 - Do this **in the evening**, when nobody is selling, and look at `ps` and `logs api` after.
 - Rebuild at least **twice a year (before the end of March and the end of October)** even without code changes: the
   image carries the time-zone rules, and Palestine announces its daylight-saving dates each year.
@@ -91,6 +95,21 @@ docker compose -f docker-compose.prod.yml up -d --build      # the database is m
   one is a deliberate change: do it on a quiet day, then run the drill.
 - The server's own operating system updates itself (unattended-upgrades); reboot it now and then
   (`sudo reboot`; everything restarts by itself).
+- Merging to `main` does not change the server: nothing is deployed until `update.sh` runs there.
+
+## Rolling back
+- **The new version is broken and `update.sh` already went back** (it said ROLLED BACK): nothing to do on the server; look at
+  `docker compose -f docker-compose.prod.yml logs --tail 100 api` to see why, and fix it in the repository.
+- **You noticed the problem later**, after a successful update: go back by hand to the commit that worked
+  (`git log --oneline` on the server, then `git reset --hard <that commit>` and
+  `docker compose -f docker-compose.prod.yml up -d --build`). The folder must have no local changes; the next
+  `update.sh` brings you forward again.
+- **The database.** Going back restores the code, not the data. That is why **every migration must only add** (a new table, a
+  new nullable column or index; never drop, rename or tighten something the previous version reads or writes). With that rule
+  the previous code runs fine on the newer database. If a migration ever has to change data in a way the old code cannot
+  read, say so in its pull request, take a backup first (`update.sh` does), and know that going back then means restoring that
+  backup (`docs/RESTORE.md`), which loses what was entered after it.
+- After any rollback, check `ps`, `/api/health` and `bash scripts/restore-drill.sh` on a quiet day.
 
 ## If something goes wrong
 | Symptom | First look |
