@@ -59,6 +59,8 @@ jobs:
       - run: ruff format --check .
       - run: mypy app tests scripts
       - run: pytest -q
+      - run: bash scripts/update.test.sh
+        working-directory: .
 
   compose-smoke:
     needs: web
