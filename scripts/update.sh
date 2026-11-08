@@ -66,7 +66,11 @@ fi
 
 if [ -z "$YES" ]; then
   read -r -p "Continue? [y/N] " answer
-  [ "$answer" = y ] || stop "not confirmed"
+  answer=$(printf '%s' "$answer" | tr -d '[:space:]' | tr 'A-Z' 'a-z') # a terminal may add a carriage return or a space
+  case "$answer" in
+    y | yes) ;;
+    *) stop "not confirmed" ;;
+  esac
 fi
 
 if [ -z "${SKIP_BACKUP:-}" ]; then

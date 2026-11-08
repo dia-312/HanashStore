@@ -83,6 +83,15 @@ before=$(head_of)
 run n
 check "stops with 3 and changes nothing" '[ $code -eq 3 ] && [ "$(head_of)" = "$before" ] && ! grep -q "up -d" "$SHIM_LOG"'
 
+echo "the answer as a terminal may send it"
+before=$(head_of)
+run $'n\r'
+check "n with a carriage return is still no" '[ $code -eq 3 ] && [ "$(head_of)" = "$before" ]'
+run $' Y \r'
+check "Y with spaces and a carriage return is yes" '[ $code -eq 0 ] && [ "$(head_of)" = "$(remote_head)" ]'
+before=$(head_of)
+publish "v3b"
+
 echo "the backup fails"
 touch "$work/backup_fails"
 run y
