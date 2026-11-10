@@ -54,6 +54,10 @@ export const setSyncHooks = (next: SyncHooks) => {
 
 let running: Promise<void> | null = null
 let again = false
+/** The run has asked the server for news (or is past that): its answer cannot hold an edit made now. */
+let pulling = false
+/** A call joined the run after it had asked for news, so another pull is needed even with nothing to push. */
+let stale = false
 
 /**
  * The network event can come before the connection is really back (the radio says yes, the route
@@ -89,9 +93,11 @@ type Outcome = 'ok' | 'network' | 'failed'
 /** One push and pull. The reason for a failure is in the store. */
 async function runOnce(): Promise<Outcome> {
   try {
+    stale = false
     const first = (await getMeta<number>('syncCursor')) === undefined
     const started = performance.now()
     await pushPending()
+    pulling = true
     await pullAll()
     // Document numbers continue above the server's (matters on a replacement iPad).
     await raiseCounters(await fetchServerNumbers())
@@ -106,17 +112,21 @@ async function runOnce(): Promise<Outcome> {
     else if (e instanceof ApiError && e.code === 'UNAUTHENTICATED') hooks.onSessionExpired()
     useSync.setState({ lastError: e instanceof ApiError ? e.code : 'UNKNOWN' })
     return e instanceof ApiError && e.code === 'NETWORK' ? 'network' : 'failed'
+  } finally {
+    pulling = false
   }
 }
 
 /**
  * Push waiting commands, then pull. One run at a time. A call made while a run is in progress joins
- * it, and if a command was added meanwhile (the push had already looked at the outbox) a second
- * round follows at once, so a change never waits for the next minute.
+ * it, and a second round follows at once if a command was added meanwhile (the push had already
+ * looked at the outbox) or if the call came after the pull had begun (an edit made online, such as
+ * a new category, is not in that answer), so a change never waits for the next minute.
  */
 export function syncNow(): Promise<void> {
   if (running) {
     again = true
+    if (pulling) stale = true
     return running
   }
   if (!navigator.onLine) return Promise.resolve()
@@ -124,7 +134,12 @@ export function syncNow(): Promise<void> {
   running = (async () => {
     try {
       let outcome = await runOnce()
-      while (outcome === 'ok' && again && navigator.onLine && (await pendingCount()) > 0) {
+      while (
+        outcome === 'ok' &&
+        again &&
+        navigator.onLine &&
+        (stale || (await pendingCount()) > 0)
+      ) {
         again = false
         outcome = await runOnce()
       }

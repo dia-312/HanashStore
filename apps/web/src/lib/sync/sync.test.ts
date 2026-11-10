@@ -500,6 +500,28 @@ describe('sync engine', () => {
     expect(await pendingCommands()).toHaveLength(0)
   })
 
+  it('an online edit made while the pull is under way is pulled in a second round, not a minute later', async () => {
+    // The rep adds a category on the server; the app asks for a sync right away, but a run that
+    // already asked the server for news is under way. That run's answer does not have the edit.
+    let pulls = 0
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string) => {
+        if (input.includes('/sync/push')) return json({ results: [], cursor: 0 })
+        if (!input.includes('/sync/pull')) return json(page({}, 0)) // the numbers check
+        pulls++
+        if (pulls === 1) {
+          void syncNow()
+          return json(page({}, 3))
+        }
+        return json(page({ variants: [variant('late')] }, 4))
+      }),
+    )
+    await syncNow()
+    expect(pulls).toBe(2)
+    expect(await db.variants.get('late')).toBeDefined()
+  })
+
   it('a server error is shown, keeps the commands, and the next run tries again', async () => {
     vi.stubGlobal(
       'fetch',
