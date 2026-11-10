@@ -1,4 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Suspense, lazy, useEffect, useMemo, useRef, useState } from 'react'
+import { Icon } from '../../components/Icon'
+import { SoftBoundary } from '../../components/SoftBoundary'
 import { Thumb } from '../../components/Thumb'
 import { ar, fill } from '../../i18n/ar'
 import { formatMoney } from '../../lib/money'
@@ -7,6 +9,9 @@ import type { Availability, PresentProduct, PresentVariant } from '../../lib/pre
 // A product in presentation mode: pictures that swipe, size buttons that pick the variant (and
 // show its picture; the colour is not a step), and one card for the chosen variant with price, availability
 // badge and the add button / quantity stepper. The shelf quantity is never shown.
+
+// The viewer is only needed when a picture is tapped, so it is not part of the first download.
+const ImageViewer = lazy(() => import('../../components/ImageViewer'))
 
 const big = 'min-h-14 min-w-14 rounded-xl border-2 border-navy/30 bg-white text-2xl font-bold'
 
@@ -92,6 +97,7 @@ function Gallery({
 }) {
   const rail = useRef<HTMLDivElement>(null)
   const [index, setIndex] = useState(0)
+  const [viewing, setViewing] = useState<number | null>(null)
   const images = product.gallery
 
   useEffect(() => {
@@ -118,14 +124,27 @@ function Gallery({
         }}
         className="flex snap-x snap-mandatory overflow-x-auto rounded-2xl bg-white"
       >
-        {images.map((image) => (
-          <img
+        {images.map((image, at) => (
+          <button
             key={image.id}
-            src={image.full_url}
-            alt={product.name}
-            className="aspect-square w-full shrink-0 snap-center object-cover"
-            draggable={false}
-          />
+            type="button"
+            aria-label={ar.present.zoomPicture}
+            onClick={() => setViewing(at)}
+            className="relative block w-full shrink-0 snap-center outline-accent focus-visible:outline-4 focus-visible:-outline-offset-4"
+          >
+            <img
+              src={image.full_url}
+              alt={product.name}
+              className="aspect-square w-full object-cover"
+              draggable={false}
+            />
+            <span
+              aria-hidden="true"
+              className="absolute bottom-2 end-2 grid size-10 place-items-center rounded-full bg-navy/70 text-cream"
+            >
+              <Icon name="zoom" className="size-5" />
+            </span>
+          </button>
         ))}
       </div>
       {images.length > 1 && (
@@ -154,6 +173,18 @@ function Gallery({
             </button>
           ))}
         </div>
+      )}
+      {viewing !== null && (
+        <SoftBoundary onError={() => setViewing(null)}>
+          <Suspense fallback={null}>
+            <ImageViewer
+              images={images.map((i) => ({ id: i.id, url: i.full_url }))}
+              alt={product.name}
+              start={viewing}
+              onClose={() => setViewing(null)}
+            />
+          </Suspense>
+        </SoftBoundary>
       )}
     </div>
   )

@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter, Route, Routes } from 'react-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { db, setMeta, wipeLocalData, type DbCustomer, type DbVariant } from '../../db'
+import { db, setMeta, wipeLocalData, type DbCustomer, type DbImage, type DbVariant } from '../../db'
 import { ar } from '../../i18n/ar'
 import { getCart } from '../../lib/cart'
 import { freshAttempts } from '../../lib/lock'
@@ -444,5 +444,156 @@ describe('what the customer must never reach', () => {
     fireEvent.click(await screen.findByRole('button', { name: new RegExp(ar.present.cart) }))
     await screen.findByRole('dialog', { name: ar.present.cart })
     check()
+  })
+})
+
+describe('tapping a picture in presentation mode', () => {
+  const image = (id: string, extra: Partial<DbImage> = {}): DbImage => ({
+    id,
+    product_id: 'p1',
+    variant_id: null,
+    thumb_url: `/media/${id}-t.webp`,
+    full_url: `/media/${id}-f.webp`,
+    sort_order: 0,
+    deleted_at: null,
+    change_seq: 1,
+    ...extra,
+  })
+  const addPictures = (...ids: string[]) =>
+    db.images.bulkPut(ids.map((id, at) => image(id, { sort_order: at })))
+  const zoomButtons = () => screen.getAllByRole('button', { name: ar.present.zoomPicture })
+  const viewer = () => screen.findByRole('dialog', { name: 'أرجيلة كبيرة' })
+
+  it('opens every picture of the product over the whole screen, and the close button goes back', async () => {
+    await addPictures('i0', 'i1', 'i2')
+    renderPresent()
+    await openProduct()
+    const opener = zoomButtons()[0]!
+    opener.focus()
+    fireEvent.click(opener)
+    const dialog = within(await viewer())
+    expect(dialog.getAllByRole('img').map((i) => i.getAttribute('src'))).toEqual([
+      '/media/i0-f.webp',
+      '/media/i1-f.webp',
+      '/media/i2-f.webp',
+    ])
+    expect(dialog.getByText('1 من 3')).toBeTruthy()
+    expect(document.body.style.overflow).toBe('hidden') // the page behind does not scroll
+    fireEvent.click(dialog.getByRole('button', { name: ar.present.close }))
+    expect(screen.queryByRole('dialog', { name: 'أرجيلة كبيرة' })).toBeNull()
+    expect(document.body.style.overflow).not.toBe('hidden')
+    expect(document.activeElement).toBe(opener) // the customer is where they were
+  })
+
+  it('opens on the picture that was tapped', async () => {
+    await addPictures('i0', 'i1', 'i2')
+    renderPresent()
+    await openProduct()
+    fireEvent.click(zoomButtons()[1]!)
+    expect(within(await viewer()).getByText('2 من 3')).toBeTruthy()
+  })
+
+  it('moves between pictures with the arrows, which stop at the first and the last', async () => {
+    await addPictures('i0', 'i1')
+    renderPresent()
+    await openProduct()
+    fireEvent.click(zoomButtons()[0]!)
+    const dialog = within(await viewer())
+    const prev = dialog.getByRole('button', { name: ar.present.prevPicture }) as HTMLButtonElement
+    const next = dialog.getByRole('button', { name: ar.present.nextPicture }) as HTMLButtonElement
+    expect(prev.disabled).toBe(true)
+    fireEvent.click(next)
+    expect(dialog.getByText('2 من 2')).toBeTruthy()
+    expect(next.disabled).toBe(true)
+    fireEvent.click(prev)
+    expect(dialog.getByText('1 من 2')).toBeTruthy()
+  })
+
+  it('closes with Escape', async () => {
+    await addPictures('i0')
+    renderPresent()
+    await openProduct()
+    fireEvent.click(zoomButtons()[0]!)
+    await viewer()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(screen.queryByRole('dialog', { name: 'أرجيلة كبيرة' })).toBeNull()
+  })
+
+  it('one picture has no counter and no arrows', async () => {
+    await addPictures('i0')
+    renderPresent()
+    await openProduct()
+    fireEvent.click(zoomButtons()[0]!)
+    const dialog = within(await viewer())
+    expect(dialog.queryByRole('button', { name: ar.present.nextPicture })).toBeNull()
+    expect(dialog.queryByText(/من/)).toBeNull()
+  })
+
+  it('a product without pictures has nothing to tap', async () => {
+    renderPresent()
+    await openProduct()
+    expect(screen.queryAllByRole('button', { name: ar.present.zoomPicture })).toHaveLength(0)
+  })
+
+  it('a deleted picture is not in the viewer', async () => {
+    await db.images.bulkPut([
+      image('i0'),
+      image('i1', { sort_order: 1, deleted_at: '2026-11-01T00:00:00Z' }),
+    ])
+    renderPresent()
+    await openProduct()
+    fireEvent.click(zoomButtons()[0]!)
+    expect(within(await viewer()).getAllByRole('img')).toHaveLength(1)
+  })
+
+  it('a double tap zooms the picture and a second one brings it back', async () => {
+    await addPictures('i0')
+    renderPresent()
+    await openProduct()
+    fireEvent.click(zoomButtons()[0]!)
+    const dialog = within(await viewer())
+    const picture = dialog.getByRole('img')
+    const tap = () => {
+      const area = picture.parentElement!
+      fireEvent.pointerDown(area, { pointerId: 1, clientX: 50, clientY: 50 })
+      fireEvent.pointerUp(area, { pointerId: 1, clientX: 50, clientY: 50 })
+    }
+    expect(picture.style.transform).toContain('scale(1)')
+    tap()
+    tap()
+    await waitFor(() => expect(picture.style.transform).toContain('scale(2.5)'))
+    tap()
+    tap()
+    await waitFor(() => expect(picture.style.transform).toContain('scale(1)'))
+  })
+
+  it('shows nothing private: no link, no shelf quantity, no balance', async () => {
+    await addPictures('i0', 'i1')
+    renderPresent()
+    await openProduct()
+    fireEvent.click(zoomButtons()[0]!)
+    await viewer()
+    expect(document.querySelectorAll('a')).toHaveLength(0)
+    const text = document.body.textContent ?? ''
+    expect(text).not.toMatch(/\b37\b/)
+    expect(text).not.toContain(ar.customers.balance)
+  })
+
+  it('does not change what is stored: the pictures, the stock and the outbox are as they were', async () => {
+    await addPictures('i0', 'i1')
+    const snapshot = async () =>
+      JSON.stringify([
+        await db.images.toArray(),
+        await db.variants.toArray(),
+        await db.outbox.toArray(),
+      ])
+    const before = await snapshot()
+    renderPresent()
+    await openProduct()
+    fireEvent.click(zoomButtons()[1]!)
+    const dialog = within(await viewer())
+    fireEvent.click(dialog.getByRole('button', { name: ar.present.prevPicture }))
+    fireEvent.click(dialog.getByRole('button', { name: ar.present.close }))
+    expect(await snapshot()).toBe(before)
   })
 })
